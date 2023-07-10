@@ -14,6 +14,35 @@ FS::~FS()
 int FS::format()
 {
     std::cout << "FS::format()\n";
+
+    // Initialize the FAT
+    std::memset(fat, FAT_FREE, sizeof(fat));
+
+    // Mark block 0 (the root directory) as used
+    fat[0] = FAT_USED;
+
+    // Mark block 1 (the FAT block) as used
+    fat[1] = FAT_USED;
+
+    // Update the FAT on the disk
+    if (disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat)) != 0) {
+        std::cerr << "Error: Failed to update the FAT on the disk\n";
+        return -1;
+    }
+
+    // Mark all other blocks as free
+    for (unsigned i = DATA_BLOCK_START; i < NO_BLOCKS; ++i) {
+        fat[i] = FAT_FREE;
+    }
+
+    // Update the FAT on the disk
+    if (disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat)) != 0) {
+        std::cerr << "Error: Failed to update the FAT on the disk\n";
+        return -1;
+    }
+
+    std::cout << "Disk formatted successfully.\n";
+
     return 0;
 }
 
@@ -22,6 +51,33 @@ int FS::format()
 int FS::create(std::string filepath)
 {
     std::cout << "FS::create(" << filepath << ")\n";
+
+    // Open the file for writing
+    std::ofstream file(filepath, std::ios::binary | std::ios::out);
+    if (!file.is_open()) {
+        std::cerr << "Error: Failed to create file " << filepath << "\n";
+        return -1;
+    }
+
+    std::string line;
+    while (true) {
+        // Read a line of input
+        std::getline(std::cin, line);
+
+        // Write the line to the file
+        file << line << std::endl;
+
+        // Check if the line is empty, indicating the end of input
+        if (line.empty()) {
+            break;
+        }
+    }
+
+    // Close the file
+    file.close();
+
+    std::cout << "File " << filepath << " created successfully.\n";
+
     return 0;
 }
 
@@ -29,6 +85,22 @@ int FS::create(std::string filepath)
 int FS::cat(std::string filepath)
 {
     std::cout << "FS::cat(" << filepath << ")\n";
+
+    // Open the file for reading
+    std::ifstream file(filepath, std::ios::binary | std::ios::in);
+    if (!file.is_open()) {
+        std::cerr << "Error: Failed to open file " << filepath << "\n";
+        return -1;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::cout << line << std::endl;
+    }
+
+    // Close the file
+    file.close();
+
     return 0;
 }
 
@@ -36,6 +108,43 @@ int FS::cat(std::string filepath)
 int FS::ls()
 {
     std::cout << "FS::ls()\n";
+
+    // Open the current directory (root directory)
+    DIR* dir = opendir(".");
+    if (dir == nullptr) {
+        std::cerr << "Error: Failed to open current directory\n";
+        return -1;
+    }
+
+    // Read the directory entries
+    dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string filename = entry->d_name;
+
+        // Skip "." and ".." entries
+        if (filename == "." || filename == "..") {
+            continue;
+        }
+
+        // Print the file name
+        std::cout << filename;
+
+        // Get the file size
+        std::string filepath = "./" + filename;
+        FILE* file = fopen(filepath.c_str(), "r");
+        if (file != nullptr) {
+            fseek(file, 0, SEEK_END);
+            long filesize = ftell(file);
+            fclose(file);
+            std::cout << " " << filesize;
+        }
+
+        std::cout << std::endl;
+    }
+
+    // Close the directory
+    closedir(dir);
+
     return 0;
 }
 

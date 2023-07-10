@@ -2,8 +2,7 @@
 #include "fs.h"
 #include "disk.h"
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
     Shell shell;
     shell.run();
