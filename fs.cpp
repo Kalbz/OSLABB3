@@ -153,6 +153,40 @@ int FS::ls()
 int FS::cp(std::string sourcepath, std::string destpath)
 {
     std::cout << "FS::cp(" << sourcepath << "," << destpath << ")\n";
+
+    // Open the source file for reading
+    int sourceFile = open(sourcepath.c_str(), O_RDONLY);
+    if (sourceFile == -1) {
+        std::cerr << "Error: Failed to open source file " << sourcepath << "\n";
+        return -1;
+    }
+
+    // Open the destination file for writing
+    int destFile = open(destpath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (destFile == -1) {
+        std::cerr << "Error: Failed to open destination file " << destpath << "\n";
+        close(sourceFile);
+        return -1;
+    }
+
+    // Copy the contents of the source file to the destination file
+    char buffer[4096];
+    ssize_t bytesRead;
+    while ((bytesRead = read(sourceFile, buffer, sizeof(buffer))) > 0) {
+        if (write(destFile, buffer, bytesRead) != bytesRead) {
+            std::cerr << "Error: Failed to write to destination file\n";
+            close(sourceFile);
+            close(destFile);
+            return -1;
+        }
+    }
+
+    // Close the files
+    close(sourceFile);
+    close(destFile);
+
+    std::cout << "File " << sourcepath << " copied to " << destpath << " successfully.\n";
+
     return 0;
 }
 
