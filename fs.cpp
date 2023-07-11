@@ -195,7 +195,27 @@ int FS::cp(std::string sourcepath, std::string destpath)
 int FS::mv(std::string sourcepath, std::string destpath)
 {
     std::cout << "FS::mv(" << sourcepath << "," << destpath << ")\n";
-    return 0;
+
+    // Check if the source file exists
+    if (access(sourcepath.c_str(), F_OK) == -1) {
+        std::cerr << "Error: Source file " << sourcepath << " does not exist\n";
+        return -1;
+    }
+
+    // Check if the destination file already exists
+    if (access(destpath.c_str(), F_OK) == 0) {
+        std::cerr << "Error: Destination file " << destpath << " already exists\n";
+        return -1;
+    }
+
+    // Rename the file
+    if (rename(sourcepath.c_str(), destpath.c_str()) == 0) {
+        std::cout << "File " << sourcepath << " renamed to " << destpath << " successfully\n";
+        return 0;
+    } else {
+        std::cerr << "Error: Failed to rename file " << sourcepath << "\n";
+        return -1;
+    }
 }
 
 // rm <filepath> removes / deletes the file <filepath>
