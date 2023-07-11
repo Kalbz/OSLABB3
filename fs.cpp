@@ -153,6 +153,40 @@ int FS::ls()
 int FS::cp(std::string sourcepath, std::string destpath)
 {
     std::cout << "FS::cp(" << sourcepath << "," << destpath << ")\n";
+
+    // Open the source file for reading
+    int sourceFile = open(sourcepath.c_str(), O_RDONLY);
+    if (sourceFile == -1) {
+        std::cerr << "Error: Failed to open source file " << sourcepath << "\n";
+        return -1;
+    }
+
+    // Open the destination file for writing
+    int destFile = open(destpath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (destFile == -1) {
+        std::cerr << "Error: Failed to open destination file " << destpath << "\n";
+        close(sourceFile);
+        return -1;
+    }
+
+    // Copy the contents of the source file to the destination file
+    char buffer[4096];
+    ssize_t bytesRead;
+    while ((bytesRead = read(sourceFile, buffer, sizeof(buffer))) > 0) {
+        if (write(destFile, buffer, bytesRead) != bytesRead) {
+            std::cerr << "Error: Failed to write to destination file\n";
+            close(sourceFile);
+            close(destFile);
+            return -1;
+        }
+    }
+
+    // Close the files
+    close(sourceFile);
+    close(destFile);
+
+    std::cout << "File " << sourcepath << " copied to " << destpath << " successfully.\n";
+
     return 0;
 }
 
@@ -161,14 +195,48 @@ int FS::cp(std::string sourcepath, std::string destpath)
 int FS::mv(std::string sourcepath, std::string destpath)
 {
     std::cout << "FS::mv(" << sourcepath << "," << destpath << ")\n";
-    return 0;
+
+    // Check if the source file exists
+    if (access(sourcepath.c_str(), F_OK) == -1) {
+        std::cerr << "Error: Source file " << sourcepath << " does not exist\n";
+        return -1;
+    }
+
+    // Check if the destination file already exists
+    if (access(destpath.c_str(), F_OK) == 0) {
+        std::cerr << "Error: Destination file " << destpath << " already exists\n";
+        return -1;
+    }
+
+    // Rename the file
+    if (rename(sourcepath.c_str(), destpath.c_str()) == 0) {
+        std::cout << "File " << sourcepath << " renamed to " << destpath << " successfully\n";
+        return 0;
+    } else {
+        std::cerr << "Error: Failed to rename file " << sourcepath << "\n";
+        return -1;
+    }
 }
 
 // rm <filepath> removes / deletes the file <filepath>
 int FS::rm(std::string filepath)
 {
     std::cout << "FS::rm(" << filepath << ")\n";
-    return 0;
+
+    // Check if the file exists
+    if (access(filepath.c_str(), F_OK) == -1) {
+        std::cerr << "Error: File " << filepath << " does not exist\n";
+        return -1;
+    }
+
+    // Remove the file
+    if (remove(filepath.c_str()) == 0) {
+        std::cout << "File " << filepath << " deleted successfully\n";
+        return 0;
+    } else {
+        std::cerr << "Error: Failed to delete file " << filepath << "\n";
+        return -1;
+    }
 }
 
 // append <filepath1> <filepath2> appends the contents of file <filepath1> to
@@ -176,6 +244,31 @@ int FS::rm(std::string filepath)
 int FS::append(std::string filepath1, std::string filepath2)
 {
     std::cout << "FS::append(" << filepath1 << "," << filepath2 << ")\n";
+
+    // Open the source file for reading
+    std::ifstream sourceFile(filepath1, std::ios::binary);
+    if (!sourceFile) {
+        std::cerr << "Error: Failed to open source file " << filepath1 << "\n";
+        return -1;
+    }
+
+    // Open the destination file for appending
+    std::ofstream destFile(filepath2, std::ios::binary | std::ios::app);
+    if (!destFile) {
+        std::cerr << "Error: Failed to open destination file " << filepath2 << "\n";
+        sourceFile.close();
+        return -1;
+    }
+
+    // Copy the contents of the source file to the destination file
+    destFile << sourceFile.rdbuf();
+
+    // Close the files
+    sourceFile.close();
+    destFile.close();
+
+    std::cout << "Contents of " << filepath1 << " appended to " << filepath2 << " successfully.\n";
+
     return 0;
 }
 

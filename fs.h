@@ -5,6 +5,8 @@
 #include <sstream>
 #include <filesystem>
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "disk.h"
 
 #ifndef __FS_H__
