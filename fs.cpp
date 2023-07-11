@@ -202,7 +202,21 @@ int FS::mv(std::string sourcepath, std::string destpath)
 int FS::rm(std::string filepath)
 {
     std::cout << "FS::rm(" << filepath << ")\n";
-    return 0;
+
+    // Check if the file exists
+    if (access(filepath.c_str(), F_OK) == -1) {
+        std::cerr << "Error: File " << filepath << " does not exist\n";
+        return -1;
+    }
+
+    // Remove the file
+    if (remove(filepath.c_str()) == 0) {
+        std::cout << "File " << filepath << " deleted successfully\n";
+        return 0;
+    } else {
+        std::cerr << "Error: Failed to delete file " << filepath << "\n";
+        return -1;
+    }
 }
 
 // append <filepath1> <filepath2> appends the contents of file <filepath1> to
