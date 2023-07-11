@@ -244,6 +244,31 @@ int FS::rm(std::string filepath)
 int FS::append(std::string filepath1, std::string filepath2)
 {
     std::cout << "FS::append(" << filepath1 << "," << filepath2 << ")\n";
+
+    // Open the source file for reading
+    std::ifstream sourceFile(filepath1, std::ios::binary);
+    if (!sourceFile) {
+        std::cerr << "Error: Failed to open source file " << filepath1 << "\n";
+        return -1;
+    }
+
+    // Open the destination file for appending
+    std::ofstream destFile(filepath2, std::ios::binary | std::ios::app);
+    if (!destFile) {
+        std::cerr << "Error: Failed to open destination file " << filepath2 << "\n";
+        sourceFile.close();
+        return -1;
+    }
+
+    // Copy the contents of the source file to the destination file
+    destFile << sourceFile.rdbuf();
+
+    // Close the files
+    sourceFile.close();
+    destFile.close();
+
+    std::cout << "Contents of " << filepath1 << " appended to " << filepath2 << " successfully.\n";
+
     return 0;
 }
 
