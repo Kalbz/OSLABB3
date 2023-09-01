@@ -1,12 +1,5 @@
 #include <iostream>
 #include <cstdint>
-#include <cstring>
-#include <fstream>
-#include <sstream>
-#include <filesystem>
-#include <dirent.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include "disk.h"
 
 #ifndef __FS_H__
@@ -14,11 +7,8 @@
 
 #define ROOT_BLOCK 0
 #define FAT_BLOCK 1
-#define DATA_BLOCK_START 2
-#define FAT_EOF -1
 #define FAT_FREE 0
-#define FAT_USED 1
-#define NO_BLOCKS 2048
+#define FAT_EOF -1
 
 #define TYPE_FILE 0
 #define TYPE_DIR 1
