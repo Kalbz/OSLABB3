@@ -29,6 +29,8 @@ private:
     Disk disk;
     // size of a FAT entry is 2 bytes
     int16_t fat[BLOCK_SIZE/2];
+    unsigned current_directory_block = ROOT_BLOCK;  // initially set to root block
+
 
 public:
     FS();
@@ -67,6 +69,15 @@ public:
     // chmod <accessrights> <filepath> changes the access rights for the
     // file <filepath> to <accessrights>.
     int chmod(std::string accessrights, std::string filepath);
+
+    std::string get_directory_name(unsigned block_no);
+    std::string recursive_pwd(unsigned block_no);
+    struct dir_entry* find_directory_entry(std::string name);
+    int find_directory_entry(const std::string& name, dir_entry* entries);
+    int find_free_directory_entry(dir_entry* entries);
+    int find_free_fat_entry(int start_idx = 0);
+    
+
 };
 
 #endif // __FS_H__
