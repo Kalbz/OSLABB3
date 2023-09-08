@@ -148,55 +148,47 @@ int FS::create(std::string filename) {
 
 
 
+
 // cat <filepath> reads the content of a file and prints it on the screen
 int FS::cat(std::string filename) {
     std::cout << "FS::cat(" << filename << ")\n";
-    struct dir_entry *file_entry = find_directory_entry(filename);
-    if (file_entry && file_entry->type == TYPE_DIR) {
-        std::cerr << "Error: " << filename << " is a directory.\n";
-        return -1;
-    }
-    // 1. Check if the file exists in the root directory
+
     uint8_t root_dir_data[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, root_dir_data);
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(root_dir_data);
-    int file_start_block = -1;
-    uint32_t file_size = 0;
-    
+
+    int fileIndex = -1;
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
-        if (std::string(dir_entries[i].file_name) == filename) {
-            file_start_block = dir_entries[i].first_blk;
-            file_size = dir_entries[i].size;
+        if (strcmp(dir_entries[i].file_name, filename.c_str()) == 0) {
+            fileIndex = i;
             break;
         }
     }
 
-    if (file_start_block == -1) {
-        std::cerr << "File not found." << std::endl;
-        return -1;
+    if (fileIndex == -1) {
+        std::cerr << "File not found.\n";
+        return 0;
     }
 
-    // 2. Fetch the starting block and read file contents
-    uint8_t buffer[BLOCK_SIZE] = {0};
-    int current_block = file_start_block;
-    uint32_t bytes_read = 0;
-    
-    while (current_block != FAT_EOF) {
-        disk.read(current_block, buffer);
+    // Read the FAT
+    disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
-        // 3. Print the block's contents. Keep track of bytes printed to not exceed file size.
-        for (int i = 0; i < BLOCK_SIZE && bytes_read < file_size; ++i, ++bytes_read) {
-            std::cout << buffer[i];
+    int16_t currentBlock = dir_entries[fileIndex].first_blk;
+    while (currentBlock != FAT_EOF) {
+        uint8_t block_data[BLOCK_SIZE];
+        disk.read(currentBlock, block_data);
+
+        // Print the content of the block as C-strings
+        char *ptr = (char *)block_data;
+        while (*ptr) { // Loop until we hit a null character
+            std::cout << ptr << std::endl; // Print the string
+            ptr += strlen(ptr) + 1; // Move to the next string in the block
         }
 
-        // 4. Move to the next block using FAT
-        current_block = fat[current_block];
+        currentBlock = fat[currentBlock];
     }
-    std::cout << std::endl; // Print a newline for formatting
-
     return 0;
 }
-
 
 // ls lists the content in the currect directory (files and sub-directories)
 int FS::ls() {
@@ -231,6 +223,9 @@ int FS::ls() {
 
 // cp <sourcepath> <destpath> makes an exact copy of the file
 // <sourcepath> to a new file <destpath>
+
+/* THIS SECTION IS NOT FUNCTIONING CURRENTLY*/
+
 int FS::cp(std::string sourcepath, std::string destpath) {
     std::cout << "FS::cp()\n";
 
@@ -436,13 +431,12 @@ int FS::rm(std::string filepath) {
 // append <filepath1> <filepath2> appends the contents of file <filepath1> to
 // the end of file <filepath2>. The file <filepath1> is unchanged.
 int FS::append(std::string filename1, std::string filename2) {
-    std::cout << "FS::append()\n";
+    std::cout << "Executing FS::append()...\n";
 
-    // 1. Locate both files in the directory
     uint8_t root_dir_data[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, root_dir_data);
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(root_dir_data);
-    
+
     int srcIndex = -1, destIndex = -1;
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
         if (strcmp(dir_entries[i].file_name, filename1.c_str()) == 0) {
@@ -454,28 +448,59 @@ int FS::append(std::string filename1, std::string filename2) {
     }
 
     if (srcIndex == -1 || destIndex == -1) {
-        std::cerr << "One or both files not found.\n";
+        std::cerr << "Error: One or both files not found.\n";
         return -1;
     }
 
-    // Navigate to the end of filename2 using FAT
-    int16_t currentBlockDest = dir_entries[destIndex].first_blk;
+    std::cout << "Found " << filename1 << " with size: " << dir_entries[srcIndex].size << " bytes.\n";
+    std::cout << "Found " << filename2 << " with size: " << dir_entries[destIndex].size << " bytes.\n";
+
+    // Read the FAT
     disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
+
+    int16_t currentBlockDest = dir_entries[destIndex].first_blk;
     while (fat[currentBlockDest] != FAT_EOF) {
         currentBlockDest = fat[currentBlockDest];
     }
 
-    // 2. & 3. Read blocks of filename1 and append them to filename2
+    uint8_t lastBlockData[BLOCK_SIZE];
+    disk.read(currentBlockDest, lastBlockData);
+
+    int positionInLastBlock = dir_entries[destIndex].size % BLOCK_SIZE;
+
+    // Add a newline to the destination file
+    if (positionInLastBlock < BLOCK_SIZE - 1) {
+        lastBlockData[positionInLastBlock] = '\n';
+        disk.write(currentBlockDest, lastBlockData);
+    } else {
+        int16_t newBlockForNewline = -1;
+        for (int i = 1; i < (BLOCK_SIZE / 2); ++i) {
+            if (fat[i] == FAT_FREE) {
+                newBlockForNewline = i;
+                break;
+            }
+        }
+        if (newBlockForNewline == -1) {
+            std::cerr << "Error: No free blocks left on disk for newline.\n";
+            return -1;
+        }
+        fat[currentBlockDest] = newBlockForNewline;
+        fat[newBlockForNewline] = FAT_EOF;
+        memset(lastBlockData, 0, BLOCK_SIZE);
+        lastBlockData[0] = '\n';
+        disk.write(newBlockForNewline, lastBlockData);
+        currentBlockDest = newBlockForNewline;
+        dir_entries[destIndex].size += 1;
+    }
+
+    // Append the content of source to destination
     int16_t currentBlockSrc = dir_entries[srcIndex].first_blk;
     while (currentBlockSrc != FAT_EOF) {
         uint8_t block_data[BLOCK_SIZE];
-
-        // Read block from source file
         disk.read(currentBlockSrc, block_data);
 
-        // Find a free block for the destination file
         int16_t freeBlockDest = -1;
-        for (int i = 0; i < (BLOCK_SIZE / 2); ++i) {
+        for (int i = 1; i < (BLOCK_SIZE / 2); ++i) {
             if (fat[i] == FAT_FREE) {
                 freeBlockDest = i;
                 break;
@@ -483,29 +508,34 @@ int FS::append(std::string filename1, std::string filename2) {
         }
 
         if (freeBlockDest == -1) {
-            std::cerr << "No free blocks left on disk.\n";
+            std::cerr << "Error: No free blocks left on disk.\n";
             return -1;
         }
 
-        // Update FAT
+        // Link current destination block to the new free block
         fat[currentBlockDest] = freeBlockDest;
         fat[freeBlockDest] = FAT_EOF;
-        disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
-        // Write the block data to the new location in filename2
+        std::cout << "Linking block " << currentBlockSrc << " from " << filename1 
+                  << " to free block " << freeBlockDest << " for " << filename2 << ".\n";
+
         disk.write(freeBlockDest, block_data);
 
-        // Move to the next block in source file
         currentBlockSrc = fat[currentBlockSrc];
         currentBlockDest = freeBlockDest;
     }
 
-    // Update the size of filename2 in the directory
     dir_entries[destIndex].size += dir_entries[srcIndex].size;
     disk.write(ROOT_BLOCK, root_dir_data);
+    disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
+
+    std::cout << "Completed appending " << filename1 << " to " << filename2 << ".\n";
 
     return 0;
 }
+
+
+/* THIS SECTION IS CURRENTLY WIP */
 
 
 // mkdir <dirpath> creates a new sub-directory with the name <dirpath>
@@ -571,6 +601,8 @@ int FS::mkdir(std::string dirname) {
 
     return 0;
 }
+
+/* THIS SECTION IS CURRENTLY WIP */
 
 
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>

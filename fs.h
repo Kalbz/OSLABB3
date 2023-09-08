@@ -76,7 +76,7 @@ public:
     int find_directory_entry(const std::string& name, dir_entry* entries);
     int find_free_directory_entry(dir_entry* entries);
     int find_free_fat_entry(int start_idx = 0);
-    
+    int16_t findFreeBlock();
 
 };
 
