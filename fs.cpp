@@ -149,7 +149,6 @@ int FS::create(std::string filename) {
 
 
 
-// cat <filepath> reads the content of a file and prints it on the screen
 int FS::cat(std::string filename) {
     std::cout << "FS::cat(" << filename << ")\n";
 
@@ -174,21 +173,28 @@ int FS::cat(std::string filename) {
     disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
     int16_t currentBlock = dir_entries[fileIndex].first_blk;
-    while (currentBlock != FAT_EOF) {
+    uint32_t fileSize = dir_entries[fileIndex].size;
+    uint32_t bytesRead = 0;
+
+    while (currentBlock != FAT_EOF && bytesRead < fileSize) {
         uint8_t block_data[BLOCK_SIZE];
         disk.read(currentBlock, block_data);
 
-        // Print the content of the block as C-strings
-        char *ptr = (char *)block_data;
-        while (*ptr) { // Loop until we hit a null character
-            std::cout << ptr << std::endl; // Print the string
-            ptr += strlen(ptr) + 1; // Move to the next string in the block
+        std::cout << "Reading block: " << currentBlock << std::endl;
+        std::cout << "Block content: ";
+        for (int i = 0; i < BLOCK_SIZE && bytesRead < fileSize; ++i) {
+            std::cout << static_cast<char>(block_data[i]);
+            bytesRead++;
         }
+        std::cout << std::endl;
 
         currentBlock = fat[currentBlock];
     }
+
+
     return 0;
 }
+
 
 // ls lists the content in the currect directory (files and sub-directories)
 int FS::ls() {
@@ -224,7 +230,6 @@ int FS::ls() {
 // cp <sourcepath> <destpath> makes an exact copy of the file
 // <sourcepath> to a new file <destpath>
 
-/* THIS SECTION IS NOT FUNCTIONING CURRENTLY*/
 
 int FS::cp(std::string sourcepath, std::string destpath) {
     std::cout << "FS::cp()\n";
@@ -257,6 +262,13 @@ int FS::cp(std::string sourcepath, std::string destpath) {
 
         currentBlock = fat[currentBlock];
     }
+        // After reading the source file content
+    std::cout << "Source file content: ";
+    for (int i = 0; i < sourceSize; i++) {
+        std::cout << sourceData[i];
+    }
+    std::cout << std::endl;
+
 
     // 3. Locate Free Directory Entry for Destination
     int destIndex = find_free_directory_entry(dir_entries);
@@ -302,9 +314,12 @@ int FS::cp(std::string sourcepath, std::string destpath) {
     }
 
     // Update directory entry for the destination
+// Update directory entry for the destination
     dir_entries[destIndex] = sourceFile;
     strncpy(dir_entries[destIndex].file_name, destpath.c_str(), sizeof(dir_entries[destIndex].file_name) - 1);
     dir_entries[destIndex].first_blk = destFirstBlock;
+    dir_entries[destIndex].size = sourceSize;
+
 
     // 5. Update Directory and FAT
     disk.write(current_directory_block, current_dir_data);
