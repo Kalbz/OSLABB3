@@ -188,15 +188,13 @@ int FS::cat(std::string filename) {
     }
     return 0;
 }
-
-
-// ls lists the content in the currect directory (files and sub-directories)
+// ls lists the content in the current directory (files and sub-directories)
 int FS::ls() {
     std::cout << "FS::ls()\n";
 
     // 1. Read the current directory from disk
     uint8_t current_dir_data[BLOCK_SIZE];
-    disk.read(ROOT_BLOCK, current_dir_data);
+    disk.read(current_directory_block, current_dir_data);  // Changed from ROOT_BLOCK
     struct dir_entry *current_dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
 
     // 2. Iterate over all entries and print details
@@ -221,6 +219,7 @@ int FS::ls() {
 
 
 
+
 // cp <sourcepath> <destpath> makes an exact copy of the file
 // <sourcepath> to a new file <destpath>
 
@@ -232,10 +231,16 @@ int FS::cp(std::string sourcepath, std::string destpath) {
     uint8_t current_dir_data[BLOCK_SIZE];
     disk.read(current_directory_block, current_dir_data);
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
-    int destFileIndex = find_directory_entry(destpath, dir_entries);
-    if (destFileIndex != -1) {
-        std::cerr << "Destination file name already exists.\n";
-        return -1;
+    int destIndex = find_directory_entry(destpath, dir_entries);
+    if (destIndex != -1) {
+        if (dir_entries[destIndex].type == TYPE_DIR) {
+            // Destination is a directory. Copy the source file into this directory.
+            // You might need to adjust the path and handle it accordingly.
+            destpath = destpath + "/" + sourcepath; // Adjusting the path
+        } else {
+            std::cerr << "Destination file name already exists.\n";
+            return -1;
+        }
     }
     int sourceIndex = find_directory_entry(sourcepath, dir_entries);
     if (sourceIndex == -1) {
@@ -344,7 +349,19 @@ int FS::mv(std::string sourcepath, std::string destpath) {
     uint8_t root_dir_data[BLOCK_SIZE];
     disk.read(ROOT_BLOCK, root_dir_data);
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(root_dir_data);
-    
+    // After finding the source file:
+    int destIndex = find_directory_entry(destpath, dir_entries);
+    if (destIndex != -1) {
+        if (dir_entries[destIndex].type == TYPE_DIR) {
+            // Destination is a directory. Move the source file into this directory.
+            // You might need to adjust the path and handle it accordingly.
+            destpath = destpath + "/" + sourcepath; // Adjusting the path
+        } else {
+            std::cerr << "Destination file name already exists.\n";
+            return -1;
+        }
+    }
+
     int sourceIndex = -1;
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
         if (strcmp(dir_entries[i].file_name, sourcepath.c_str()) == 0) {
@@ -592,6 +609,12 @@ int FS::mkdir(std::string dirname) {
     new_dir[0].type = TYPE_DIR;
     new_dir[0].access_rights = READ | WRITE;
 
+    for (int i = 1; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
+    new_dir[i].file_name[0] = '\0';  // Setting the first character to null indicates unused
+    new_dir[i].size = 0;
+    new_dir[i].first_blk = -1;  // Indicates no block associated
+    }
+
     disk.write(freeBlock, reinterpret_cast<uint8_t*>(new_dir));
 
     // 5. Update the current directory with the new directory's entry
@@ -621,6 +644,11 @@ int FS::mkdir(std::string dirname) {
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>
 int FS::cd(std::string dirname) {
     std::cout << "FS::cd()\n";
+
+    if (dirname == "/") {
+        current_directory_block = ROOT_BLOCK;
+        return 0;
+    }
 
     // If dirname is "..", we simply need to fetch the parent directory from the current directory
     if (dirname == "..") {
@@ -707,8 +735,12 @@ int FS::pwd() {
         std::cout << "/\n";
         return 0;
     }
-
-    std::cout << recursive_pwd(current_directory_block) << std::endl;
+    
+    std::string path = recursive_pwd(current_directory_block);
+    if (path.back() == '/' && path.length() > 1) {  // Check if the last character is a slash and it's not the root directory
+        path.pop_back();  // Remove the last character
+    }
+    std::cout << path << std::endl;
     return 0;
 }
 
