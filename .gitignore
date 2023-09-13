@@ -1,0 +1,9 @@
+#VS Code settings
+.vscode
+
+# output files
+.o
+.bin
+
+# text files
+.txt
