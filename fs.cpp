@@ -173,25 +173,19 @@ int FS::cat(std::string filename) {
     disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
     int16_t currentBlock = dir_entries[fileIndex].first_blk;
-    uint32_t fileSize = dir_entries[fileIndex].size;
-    uint32_t bytesRead = 0;
-
-    while (currentBlock != FAT_EOF && bytesRead < fileSize) {
+    while (currentBlock != FAT_EOF) {
         uint8_t block_data[BLOCK_SIZE];
         disk.read(currentBlock, block_data);
 
-        std::cout << "Reading block: " << currentBlock << std::endl;
-        std::cout << "Block content: ";
-        for (int i = 0; i < BLOCK_SIZE && bytesRead < fileSize; ++i) {
-            std::cout << static_cast<char>(block_data[i]);
-            bytesRead++;
+        // Print the content of the block as C-strings
+        char *ptr = (char *)block_data;
+        while (*ptr) { // Loop until we hit a null character
+            std::cout << ptr << std::endl; // Print the string
+            ptr += strlen(ptr) + 1; // Move to the next string in the block
         }
-        std::cout << std::endl;
 
         currentBlock = fat[currentBlock];
     }
-
-
     return 0;
 }
 
@@ -238,7 +232,11 @@ int FS::cp(std::string sourcepath, std::string destpath) {
     uint8_t current_dir_data[BLOCK_SIZE];
     disk.read(current_directory_block, current_dir_data);
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
-
+    int destFileIndex = find_directory_entry(destpath, dir_entries);
+    if (destFileIndex != -1) {
+        std::cerr << "Destination file name already exists.\n";
+        return -1;
+    }
     int sourceIndex = find_directory_entry(sourcepath, dir_entries);
     if (sourceIndex == -1) {
         std::cerr << "Source file not found.\n";
