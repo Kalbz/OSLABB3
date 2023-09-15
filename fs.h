@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstdint>
 #include "disk.h"
+#include <vector>
 
 #ifndef __FS_H__
 #define __FS_H__
@@ -77,6 +78,8 @@ public:
     int find_free_directory_entry(dir_entry* entries);
     int find_free_fat_entry(int start_idx = 1);
     int16_t findFreeBlock();
+    int16_t resolve_path(const std::vector<std::string>& components);
+    std::vector<std::string> parse_path(const std::string& path);
 
 };
 
