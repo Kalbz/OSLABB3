@@ -49,7 +49,8 @@ int FS::format()
 // written on the following rows (ended with an empty row)
 int FS::create(std::string filename) {
     std::cout << "FS::create(" << filename << ")\n";
-    
+    std::cout << "Before create: current_directory_block = " << current_directory_block << std::endl;
+
     // 1. Find a free block
     int free_block = -1;
     for (int i = 2; i < disk.get_no_blocks(); ++i) { // start from 2 because 0 and 1 are reserved
@@ -142,6 +143,7 @@ int FS::create(std::string filename) {
     // Write back the updated root directory and FAT to the disk
     disk.write(current_directory_block, dir_data);  // Use current_directory_block instead of ROOT_BLOCK
     disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
+    std::cout << "After create: current_directory_block = " << current_directory_block << std::endl;
 
     return 0;
 }
@@ -191,6 +193,7 @@ int FS::cat(std::string filename) {
 // ls lists the content in the current directory (files and sub-directories)
 int FS::ls() {
     std::cout << "FS::ls()\n";
+    std::cout << "Entering ls: current_directory_block = " << current_directory_block << std::endl;
 
     // 1. Read the current directory from disk
     uint8_t current_dir_data[BLOCK_SIZE];
@@ -226,6 +229,7 @@ int FS::ls() {
 
 int FS::cp(std::string sourcepath, std::string destpath) {
     std::cout << "FS::cp()\n";
+    std::cout << "Entering cp: current_directory_block = " << current_directory_block << std::endl;
 
     // 1. Find Source File in the current directory
     uint8_t current_dir_data[BLOCK_SIZE];
@@ -397,6 +401,7 @@ int FS::mv(std::string sourcepath, std::string destpath) {
 // rm <filepath> removes / deletes the file <filepath>
 int FS::rm(std::string filepath) {
     std::cout << "FS::rm()\n";
+    std::cout << "Entering rm: current_directory_block = " << current_directory_block << std::endl;
 
     // 1. Locate the file/directory in the current directory
     uint8_t current_dir_data[BLOCK_SIZE];
@@ -575,7 +580,7 @@ int FS::mkdir(std::string dirpath) {
 
     // 1. Read the current directory from disk
     uint8_t current_dir_data[BLOCK_SIZE];
-    disk.read(current_directory_block, current_dir_data);  // Changed from ROOT_BLOCK
+    disk.read(current_directory_block, current_dir_data);
     struct dir_entry *current_dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
 
     // 2. Check if the directory name already exists
@@ -588,13 +593,13 @@ int FS::mkdir(std::string dirpath) {
 
     // 3. Find a free block for the new directory
     int16_t freeBlock = -1;
-    disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
-    for (int i = 0; i < (BLOCK_SIZE / 2); ++i) {
+    for (int i = 2; i < disk.get_no_blocks(); ++i) {  // start from 2 because 0 and 1 are reserved
         if (fat[i] == FAT_FREE) {
             freeBlock = i;
             break;
         }
     }
+
 
     if (freeBlock == -1) {
         std::cerr << "No free blocks left on disk.\n";
@@ -604,15 +609,15 @@ int FS::mkdir(std::string dirpath) {
     // 4. Write the ".." entry in the new directory block
     struct dir_entry new_dir[BLOCK_SIZE / sizeof(struct dir_entry)];
     strcpy(new_dir[0].file_name, "..");
-    new_dir[0].size = 0;  // size is 0 for ".."
-    new_dir[0].first_blk = current_directory_block;  // ".." should point back to the parent directory
+    new_dir[0].size = 0;
+    new_dir[0].first_blk = current_directory_block;
     new_dir[0].type = TYPE_DIR;
     new_dir[0].access_rights = READ | WRITE;
 
     for (int i = 1; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
-    new_dir[i].file_name[0] = '\0';  // Setting the first character to null indicates unused
-    new_dir[i].size = 0;
-    new_dir[i].first_blk = -1;  // Indicates no block associated
+        new_dir[i].file_name[0] = '\0';
+        new_dir[i].size = 0;
+        new_dir[i].first_blk = -1;
     }
 
     disk.write(freeBlock, reinterpret_cast<uint8_t*>(new_dir));
@@ -621,7 +626,7 @@ int FS::mkdir(std::string dirpath) {
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
         if (current_dir_entries[i].file_name[0] == '\0') {
             strcpy(current_dir_entries[i].file_name, dirpath.c_str());
-            current_dir_entries[i].size = sizeof(struct dir_entry);  // size of one dir_entry (for "..")
+            current_dir_entries[i].size = sizeof(struct dir_entry);
             current_dir_entries[i].first_blk = freeBlock;
             current_dir_entries[i].type = TYPE_DIR;
             current_dir_entries[i].access_rights = READ | WRITE;
@@ -629,14 +634,17 @@ int FS::mkdir(std::string dirpath) {
         }
     }
 
-    disk.write(current_directory_block, current_dir_data);  // Changed from ROOT_BLOCK
+    disk.write(current_directory_block, current_dir_data);
 
     // 6. Update FAT
     fat[freeBlock] = FAT_EOF;
     disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
+    std::cout << "Created directory " << dirpath << " at block " << freeBlock << std::endl;
+
     return 0;
 }
+
 
 /* THIS SECTION IS CURRENTLY WIP */
 
@@ -655,7 +663,7 @@ int FS::cd(std::string dirpath) {
         uint8_t dir_data[BLOCK_SIZE];
         disk.read(current_directory_block, dir_data);
         struct dir_entry *entries = reinterpret_cast<struct dir_entry*>(dir_data);
-        current_directory_block = entries[0].first_blk;  // ".." is always the first entry
+        current_directory_block = entries[0].first_blk;
         return 0;
     }
 
@@ -668,8 +676,9 @@ int FS::cd(std::string dirpath) {
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
         if (strcmp(current_dir_entries[i].file_name, dirpath.c_str()) == 0) {
             if (current_dir_entries[i].type == TYPE_DIR) {
+                std::cout << "Changing to directory " << dirpath << " at block " << current_dir_entries[i].first_blk << std::endl;
                 current_directory_block = current_dir_entries[i].first_blk;
-                return 0;  // Successfully changed the directory
+                return 0;
             } else {
                 std::cerr << dirpath << " is not a directory.\n";
                 return -1;
@@ -680,6 +689,7 @@ int FS::cd(std::string dirpath) {
     std::cerr << "Directory not found.\n";
     return -1;
 }
+
 
 
 
@@ -729,6 +739,7 @@ std::string FS::recursive_pwd(unsigned block_no) {
 // directory, including the currect directory name
 int FS::pwd() {
     std::cout << "FS::pwd()\n";
+    std::cout << "Entering pwd: current_directory_block = " << current_directory_block << std::endl;
 
     // If we're in the root directory
     if (current_directory_block == ROOT_BLOCK) {
@@ -754,6 +765,8 @@ int FS::chmod(std::string accessrights, std::string filepath)
 }
 
 struct dir_entry* FS::find_directory_entry(std::string name) {
+    std::cout << "Entering find_directory_entry: current_directory_block = " << current_directory_block << std::endl;
+
     uint8_t current_dir_data[BLOCK_SIZE];
     disk.read(current_directory_block, current_dir_data);
     struct dir_entry *current_dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
@@ -810,6 +823,8 @@ std::vector<std::string> FS::parse_path(const std::string& path) {
 }
 
 int16_t FS::resolve_path(const std::vector<std::string>& components) {
+    std::cout << "Entering resolve_path: current_directory_block = " << current_directory_block << std::endl;
+
     int16_t current_block = (components[0] == "/") ? ROOT_BLOCK : current_directory_block;
     for (size_t i = 1; i < components.size(); ++i) {
         // Read the current directory's data
