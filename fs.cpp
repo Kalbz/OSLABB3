@@ -794,3 +794,4 @@ int FS::find_free_fat_entry(int start_idx) {
     return -1; // No free FAT entries found
 }
 
+// Kalle är en stalledräng
