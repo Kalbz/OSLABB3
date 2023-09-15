@@ -272,7 +272,6 @@ int FS::cp(std::string sourcepath, std::string destpath) {
     }
     std::cout << std::endl;
 
-
     // 3. Locate Free Directory Entry for Destination
     destIndex = find_free_directory_entry(dir_entries); //was a declaration before, i removed it bc i couldn't build with it lol
     if (destIndex == -1) {
