@@ -274,7 +274,7 @@ int FS::cp(std::string sourcepath, std::string destpath) {
 
 
     // 3. Locate Free Directory Entry for Destination
-    int destIndex = find_free_directory_entry(dir_entries);
+    destIndex = find_free_directory_entry(dir_entries); //was a declaration before, i removed it bc i couldn't build with it lol
     if (destIndex == -1) {
         std::cerr << "Directory full. Cannot copy file.\n";
         delete[] sourceData;
