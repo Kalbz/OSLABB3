@@ -569,10 +569,6 @@ int FS::append(std::string filename1, std::string filename2) {
     return 0;
 }
 
-
-/* THIS SECTION IS CURRENTLY WIP */
-
-
 // mkdir <dirpath> creates a new sub-directory with the name <dirpath>
 // in the current directory
 int FS::mkdir(std::string dirpath) {
@@ -644,10 +640,6 @@ int FS::mkdir(std::string dirpath) {
 
     return 0;
 }
-
-
-/* THIS SECTION IS CURRENTLY WIP */
-
 
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>
 int FS::cd(std::string dirpath) {
