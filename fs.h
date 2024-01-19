@@ -77,6 +77,8 @@ public:
     int find_free_directory_entry(dir_entry* entries);
     int find_free_fat_entry(int start_idx = 1);
     int16_t findFreeBlock();
+    std::vector<std::string> resolve_path(std::string path);
+
 
 };
 
