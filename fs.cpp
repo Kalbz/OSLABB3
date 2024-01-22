@@ -615,14 +615,8 @@ int FS::mkdir(std::string dirpath) {
     }
 
     // Find a free block for the new directory
-    int16_t freeBlock = -1;
-    disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
-    for (int i = 0; i < (BLOCK_SIZE / 2); ++i) {
-        if (fat[i] == FAT_FREE) {
-            freeBlock = i;
-            break;
-        }
-    }
+    int16_t freeBlock = find_free_fat_entry(2);  // Start searching from block 2
+
 
     if (freeBlock == -1) {
         std::cerr << "No free blocks left on disk.\n";
@@ -686,6 +680,19 @@ int FS::cd(std::string dirpath) {
         uint8_t dir_data[BLOCK_SIZE];
         disk.read(block_to_search, dir_data);
         struct dir_entry *entries = reinterpret_cast<struct dir_entry*>(dir_data);
+
+        if (part == "..") {
+            // Log before navigating to parent
+            std::cout << "Attempting to navigate to parent from block: " << block_to_search << std::endl;
+            int dotdot_index = find_directory_entry("..", entries);
+            if (dotdot_index == -1) {
+                std::cerr << "Parent directory entry not found.\n";
+                return -1;
+            }
+            block_to_search = entries[dotdot_index].first_blk;
+            std::cout << "Navigated to parent directory block: " << block_to_search << std::endl;
+            continue;
+        }
 
         bool found = false;
         for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
@@ -831,13 +838,10 @@ std::vector<std::string> FS::resolve_path(std::string path) {
 
     while (std::getline(path_stream, part, '/')) {
         if (part == "" || part == ".") continue; // Skip 'current directory' parts
-        if (part == "..") {
-            // Handle 'parent directory' part by removing the last part, if it exists
-            if (!parts.empty()) parts.pop_back();
-        } else {
-            parts.push_back(part);
-        }
+        // Don't remove ".." parts here, let the cd command handle them
+        parts.push_back(part);
     }
     return parts;
 }
+
 
