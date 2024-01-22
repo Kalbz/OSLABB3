@@ -148,31 +148,45 @@ int FS::create(std::string filename) {
 }
 
 
+int FS::cat(std::string filepath) {
+    std::cout << "FS::cat(" << filepath << ")\n";
 
-int FS::cat(std::string filename) {
-    std::cout << "FS::cat(" << filename << ")\n";
+    // 1. Resolve the path
+    std::vector<std::string> pathParts = resolve_path(filepath);
+    if (pathParts.empty()) {
+        std::cerr << "Invalid path.\n";
+        return -1;
+    }
 
-    uint8_t current_dir_data[BLOCK_SIZE];
-    disk.read(current_directory_block, current_dir_data);  // Read from current_directory_block
-    struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
-
-    int fileIndex = -1;
-    for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
-        if (strcmp(dir_entries[i].file_name, filename.c_str()) == 0) {
-            fileIndex = i;
-            break;
+    // 2. Find the directory entry of the file
+    unsigned int currentBlock = current_directory_block;
+    struct dir_entry* dirEntry = nullptr;
+    for (size_t i = 0; i < pathParts.size() - 1; ++i) {  // Navigate through intermediate directories
+        dirEntry = find_directory_entry(pathParts[i]);
+        if (dirEntry == nullptr || dirEntry->type != TYPE_DIR) {
+            std::cerr << "Directory not found: " << pathParts[i] << "\n";
+            return -1;
         }
+        currentBlock = dirEntry->first_blk;  // Move to the next directory in the path
     }
 
+    // Now, currentBlock is where the file should be
+    uint8_t dir_data[BLOCK_SIZE];
+    disk.read(currentBlock, dir_data);
+    struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(dir_data);
+    int fileIndex = find_directory_entry(pathParts.back(), dir_entries); // Find the file in the directory
     if (fileIndex == -1) {
-        std::cerr << "File not found.\n";
-        return 0;
+        std::cerr << "File not found: " << pathParts.back() << "\n";
+        return -1;
     }
 
-    // Read the FAT
+    dirEntry = &dir_entries[fileIndex]; // Get the directory entry of the file
+
+    // 3. Read the FAT
     disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
-    int16_t currentBlock = dir_entries[fileIndex].first_blk;
+    // Reuse currentBlock for reading the file content
+    currentBlock = dirEntry->first_blk; // Make sure the type of currentBlock can accommodate this value
     while (currentBlock != FAT_EOF) {
         uint8_t block_data[BLOCK_SIZE];
         disk.read(currentBlock, block_data);
@@ -184,10 +198,11 @@ int FS::cat(std::string filename) {
             ptr += strlen(ptr) + 1; // Move to the next string in the block
         }
 
-        currentBlock = fat[currentBlock];
+        currentBlock = fat[currentBlock]; // This may need type casting if types are not compatible
     }
     return 0;
 }
+
 
 // ls lists the content in the current directory (files and sub-directories)
 int FS::ls() {
