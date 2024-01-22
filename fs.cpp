@@ -48,10 +48,40 @@ int FS::format()
 
 // create <filepath> creates a new file on the disk, the data content is
 // written on the following rows (ended with an empty row)
-int FS::create(std::string filename) {
-    std::cout << "FS::create(" << filename << ")\n";
+int FS::create(std::string filepath) {
+    std::cout << "FS::create(" << filepath << ")\n";
     
-    // 1. Find a free block
+    // 1. Resolve the path
+    std::vector<std::string> pathParts = resolve_path(filepath);
+    if (pathParts.empty()) {
+        std::cerr << "Invalid path." << std::endl;
+        return -1;
+    }
+
+    // 2. Navigate to the correct directory
+    unsigned int currentBlock = current_directory_block;
+    struct dir_entry* dirEntry = nullptr;
+    for (size_t i = 0; i < pathParts.size() - 1; ++i) {  // Navigate through intermediate directories
+        dirEntry = find_directory_entry(pathParts[i]);
+        if (dirEntry == nullptr || dirEntry->type != TYPE_DIR) {
+            std::cerr << "Directory not found: " << pathParts[i] << "\n";
+            return -1;
+        }
+        currentBlock = dirEntry->first_blk;  // Move to the next directory in the path
+    }
+
+    // Now, currentBlock is where the file should be created
+    uint8_t dir_data[BLOCK_SIZE];
+    disk.read(currentBlock, dir_data);
+    struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(dir_data);
+    std::string filename = pathParts.back(); // The last part is the filename
+    for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
+        if (std::string(dir_entries[i].file_name) == filename) {
+            std::cerr << "File already exists: " << filename << std::endl;
+            return -1;
+        }
+    }
+    // 1. Find a free block (correct position)
     int free_block = -1;
     for (int i = 2; i < disk.get_no_blocks(); ++i) { // start from 2 because 0 and 1 are reserved
         if (fat[i] == FAT_FREE) {
@@ -60,24 +90,13 @@ int FS::create(std::string filename) {
         }
     }
 
+
     // If no free blocks found, return error.
     if (free_block == -1) {
         std::cerr << "No free blocks available." << std::endl;
         return -1;
     }
-
-    // 2. Check if file already exists in the current directory
-    uint8_t current_dir_data[BLOCK_SIZE];
-    disk.read(current_directory_block, current_dir_data);
-    struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
-    for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
-        if (std::string(dir_entries[i].file_name) == filename) {
-            std::cerr << "File already exists." << std::endl;
-            return -1;
-        }
-    }
-
-    // 3. Create the file
+    // 2. Create the file (correct position)
     struct dir_entry new_entry;
     strncpy(new_entry.file_name, filename.c_str(), sizeof(new_entry.file_name));
     new_entry.first_blk = free_block;
@@ -132,7 +151,7 @@ int FS::create(std::string filename) {
     // Set the FAT entry for the last block to EOF
     fat[free_block] = FAT_EOF;
 
-    // Update the current directory with the new entry
+    // Update the directory (not necessarily the root) with the new entry
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
         if (dir_entries[i].file_name[0] == '\0') { // Check for empty slot
             dir_entries[i] = new_entry;
@@ -140,8 +159,8 @@ int FS::create(std::string filename) {
         }
     }
 
-    // Write back the updated root directory and FAT to the disk
-    disk.write(current_directory_block, current_dir_data);  // Use current_directory_block instead of ROOT_BLOCK
+    // Write back the updated directory and FAT to the disk
+    disk.write(currentBlock, dir_data);  // Use currentBlock instead of current_directory_block
     disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
     return 0;
