@@ -299,6 +299,34 @@ int FS::ls()
             {
                 std::cout << "file ";
             }
+
+            if (entry->access_rights & 0x04)
+            {
+                std::cout << "r";
+            }
+            else
+            {
+                std::cout << "-";
+            }
+
+            if (entry->access_rights & 0x02)
+            {
+                std::cout << "w";
+            }
+            else
+            {
+                std::cout << "-";
+            }
+
+            if (entry->access_rights & 0x01)
+            {
+                std::cout << "x ";
+            }
+            else
+            {
+                std::cout << "- ";
+            }
+
             if (entry->size == 0 || entry->type == TYPE_DIR)
             {
                 std::cout << "-\n";
