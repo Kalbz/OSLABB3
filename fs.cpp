@@ -14,15 +14,13 @@ FS::~FS()
 }
 
 // formats the disk, i.e., creates an empty file system
-int FS::format()
-{
+int FS::format() {
     std::cout << "FS::format()\n";
 
     // Initialize the FAT
     fat[0] = ROOT_BLOCK; // root directory
     fat[1] = FAT_BLOCK; // FAT
-    for (int i = 2; i < disk.get_no_blocks(); i++)
-    {
+    for (int i = 2; i < disk.get_no_blocks(); i++) {
         fat[i] = FAT_FREE;
     }
 
@@ -32,9 +30,22 @@ int FS::format()
         return -1; // or other appropriate error code
     }
 
-    // Initialize root directory
-    uint8_t rootDir[BLOCK_SIZE] = {0}; // Assuming you want it empty, adjust as needed
-    if (disk.write(ROOT_BLOCK, rootDir) != 0) {
+    // Initialize root directory with "." and ".." entries
+    struct dir_entry root_entries[BLOCK_SIZE / sizeof(struct dir_entry)] = {0};
+    strcpy(root_entries[0].file_name, "."); // Current directory
+    root_entries[0].size = 0;
+    root_entries[0].first_blk = ROOT_BLOCK;
+    root_entries[0].type = TYPE_DIR;
+    root_entries[0].access_rights = READ | WRITE | EXECUTE;
+
+    strcpy(root_entries[1].file_name, ".."); // Parent directory (itself in this case)
+    root_entries[1].size = 0;
+    root_entries[1].first_blk = ROOT_BLOCK;
+    root_entries[1].type = TYPE_DIR;
+    root_entries[1].access_rights = READ | WRITE | EXECUTE;
+
+    // Write the initialized root directory to disk
+    if (disk.write(ROOT_BLOCK, reinterpret_cast<uint8_t*>(root_entries)) != 0) {
         std::cerr << "Error writing root directory to disk.\n";
         return -1; // or other appropriate error code
     }
@@ -74,6 +85,13 @@ int FS::create(std::string filepath) {
     uint8_t dir_data[BLOCK_SIZE];
     disk.read(currentBlock, dir_data);
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(dir_data);
+
+    // Check if the directory has write permission
+    if (!(dir_entries[0].access_rights & WRITE)) { // Assuming the first entry [0] is the directory itself
+        std::cerr << "Write permission denied for directory: " << pathParts[pathParts.size() - 2] << "\n";
+        return -1;
+    }
+
     std::string filename = pathParts.back(); // The last part is the filename
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
         if (std::string(dir_entries[i].file_name) == filename) {
@@ -201,6 +219,12 @@ int FS::cat(std::string filepath) {
 
     dirEntry = &dir_entries[fileIndex]; // Get the directory entry of the file
 
+    // Check if the file has read permission
+    if (!(dirEntry->access_rights & READ)) {
+        std::cerr << "Read permission denied for file: " << pathParts.back() << "\n";
+        return -1;
+    }
+
     // 3. Read the FAT
     disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
@@ -252,9 +276,6 @@ int FS::ls() {
     return 0;
 }
 
-
-
-
 // cp <sourcepath> <destpath> makes an exact copy of the file
 // <sourcepath> to a new file <destpath>
 
@@ -262,8 +283,16 @@ int FS::cp(std::string sourcepath, std::string destpath) {
     std::cout << "FS::cp()\n";
 
     // Resolve paths to their components
-    std::vector<std::string> sourcePathParts = resolve_path(sourcepath);
-    std::vector<std::string> destPathParts = resolve_path(destpath);
+    std::vector<std::string> sourcePathParts = resolve_path_for_cp_and_mv(sourcepath);
+    std::vector<std::string> destPathParts = resolve_path_for_cp_and_mv(destpath);
+    
+    std::cout << "Resolved source path parts: ";
+    for (const auto &part : sourcePathParts) std::cout << part << " ";
+    std::cout << std::endl;
+
+    std::cout << "Resolved destination path parts: ";
+    for (const auto &part : destPathParts) std::cout << part << " ";
+    std::cout << std::endl;
 
     // Backup the current directory block for restoration later
     unsigned int backupCurrentDirectoryBlock = current_directory_block;
@@ -272,17 +301,21 @@ int FS::cp(std::string sourcepath, std::string destpath) {
     unsigned int currentBlock = current_directory_block;
     struct dir_entry *sourceDirEntry = nullptr;
     // Traverse the path but stop before the last component
+    // Traverse the source path but stop before the last component (the actual file)
     for (int i = 0; i < sourcePathParts.size() - 1; ++i) {
         const auto &part = sourcePathParts[i];
         current_directory_block = currentBlock;  // Update current directory
+        std::cout << "Traversing source path. Current directory block: " << current_directory_block << ", Looking for part: " << part << std::endl;
         sourceDirEntry = find_directory_entry(part);
         if (sourceDirEntry == nullptr || sourceDirEntry->type != TYPE_DIR) {
             std::cerr << "Intermediate path invalid or not a directory: " << part << "\n";
             current_directory_block = backupCurrentDirectoryBlock;
             return -1;
         }
+        std::cout << "Found directory: " << part << ", Block: " << sourceDirEntry->first_blk << std::endl;
         currentBlock = sourceDirEntry->first_blk;
     }
+
 
     // Handle the last part of the path which should be the file
     current_directory_block = currentBlock;  // Update current directory
@@ -331,27 +364,62 @@ int FS::cp(std::string sourcepath, std::string destpath) {
     // Restore the original current directory block
     current_directory_block = backupCurrentDirectoryBlock;
 
-    // Find the directory entry or the parent directory of the destination path
-    currentBlock = current_directory_block;
+    currentBlock = (destPathParts[0] == "/") ? ROOT_BLOCK : current_directory_block; // Start from root if path is absolute
     struct dir_entry *destDirEntry = nullptr;
+    std::string destFileName = destPathParts.back(); // Extract the filename from the destination path
+    destPathParts.pop_back(); // Remove the filename part, leaving only the directory path
+
+    // Traverse the destination path to find the directory where the file should be copied
     for (const auto &part : destPathParts) {
         current_directory_block = currentBlock;  // Update current directory
+        std::cout << "Traversing destination path. Current directory block: " << current_directory_block << ", Looking for part: " << part << std::endl;
         destDirEntry = find_directory_entry(part);
         if (destDirEntry == nullptr) {
-            break; // The path does not exist yet, will create it.
-        }
-        if (destDirEntry->type != TYPE_DIR) {
-            std::cerr << "Destination path contains a non-directory component.\n";
+            std::cerr << "Destination path invalid or directory does not exist: " << part << "\n";
             delete[] sourceData; // Clean up memory
             current_directory_block = backupCurrentDirectoryBlock;
             return -1;
         }
+        std::cout << "Found directory: " << part << ", Block: " << destDirEntry->first_blk << std::endl;
         currentBlock = destDirEntry->first_blk;
     }
+
 
     // Reading the destination directory
     disk.read(currentBlock, current_dir_data);
     dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
+
+    // Determine if the destination path is a directory or a filename
+    bool destIsDirectory = false;
+    int dirIndex = -1; // Index of the destination directory in its parent directory
+    for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); i++) {
+        if (strcmp(dir_entries[i].file_name, destFileName.c_str()) == 0) {
+            if (dir_entries[i].type == TYPE_DIR) {
+                // Destination path is a directory, set flag
+                destIsDirectory = true;
+                dirIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (destIsDirectory) {
+        // If destination is a directory, use the source file's name as the new file's name
+        currentBlock = dir_entries[dirIndex].first_blk;  // Change to the destination directory's block
+        disk.read(currentBlock, current_dir_data);  // Read the destination directory
+        dir_entries = reinterpret_cast<struct dir_entry*>(current_dir_data);
+        destFileName = sourcePathParts.back();  // Use source file name for the new file in the destination directory
+    }
+
+    // Check if the destination file already exists in the destination directory
+    for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); i++) {
+        if (strcmp(dir_entries[i].file_name, destFileName.c_str()) == 0) {
+            std::cerr << "Destination file already exists: " << destFileName << std::endl;
+            delete[] sourceData; // Clean up memory
+            current_directory_block = backupCurrentDirectoryBlock;
+            return -1; // File already exists
+        }
+    }
     
     int destIndex = find_free_directory_entry(dir_entries);
     if (destIndex == -1) {
@@ -397,12 +465,12 @@ int FS::cp(std::string sourcepath, std::string destpath) {
 
     // Update directory entry for the destination
     dir_entries[destIndex] = sourceFile;
-    strncpy(dir_entries[destIndex].file_name, destpath.c_str(), sizeof(dir_entries[destIndex].file_name) - 1);
+    strncpy(dir_entries[destIndex].file_name, destFileName.c_str(), sizeof(dir_entries[destIndex].file_name) - 1); // Use destFileName here
     dir_entries[destIndex].first_blk = destFirstBlock;
     dir_entries[destIndex].size = sourceSize;
 
     // Update Directory and FAT
-    disk.write(current_directory_block, current_dir_data);
+    disk.write(currentBlock, current_dir_data); // Write to the actual destination directory
 
     // Assuming your FAT is just a single block. 
     // If it's more than one block, this needs adjustments.
@@ -430,7 +498,7 @@ int FS::mv(std::string sourcepath, std::string destpath) {
     unsigned int backupCurrentDirectoryBlock = current_directory_block;
 
     // Find the directory entry for the source file
-    unsigned int currentBlock = current_directory_block;
+    unsigned int currentBlock = (sourcepath[0] == '/') ? ROOT_BLOCK : current_directory_block;
     struct dir_entry *sourceDirEntry = nullptr;
     for (const auto &part : sourcePathParts) {
         current_directory_block = currentBlock;  // Update current directory
@@ -449,6 +517,14 @@ int FS::mv(std::string sourcepath, std::string destpath) {
     uint8_t source_dir_data[BLOCK_SIZE];
     disk.read(currentBlock, source_dir_data);
     struct dir_entry *source_dir_entries = reinterpret_cast<struct dir_entry*>(source_dir_data);
+
+    // Check write permission on the source directory (for delete)
+    if (!(source_dir_entries[0].access_rights & WRITE)) {  // Assuming the first entry [0] is the directory itself
+        std::cerr << "Write permission denied for source directory.\n";
+        current_directory_block = backupCurrentDirectoryBlock;
+        return -1;
+    }
+
     int sourceIndex = find_directory_entry(sourcePathParts.back(), source_dir_entries);
     if (sourceIndex == -1) {
         std::cerr << "Source file not found.\n";
@@ -457,7 +533,7 @@ int FS::mv(std::string sourcepath, std::string destpath) {
     }
 
     // Find the directory for the destination path
-    currentBlock = current_directory_block;
+    currentBlock = (destpath[0] == '/') ? ROOT_BLOCK : current_directory_block;
     struct dir_entry *destDirEntry = nullptr;
     std::string destFileName = destPathParts.back(); // Extract the filename from the destination path
     destPathParts.pop_back(); // Remove the filename part, leaving only the directory path
@@ -476,6 +552,22 @@ int FS::mv(std::string sourcepath, std::string destpath) {
     uint8_t dest_dir_data[BLOCK_SIZE];
     disk.read(currentBlock, dest_dir_data);
     struct dir_entry *dest_dir_entries = reinterpret_cast<struct dir_entry*>(dest_dir_data);
+
+    // Check if the destination file already exists
+    for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); i++) {
+        if (strcmp(dest_dir_entries[i].file_name, destFileName.c_str()) == 0) {
+            std::cerr << "Destination file already exists: " << destFileName << std::endl;
+            current_directory_block = backupCurrentDirectoryBlock;
+            return -1; // File already exists
+        }
+    }
+
+    // Check write permission on the destination directory (for add)
+    if (!(dest_dir_entries[0].access_rights & WRITE)) {  // Assuming the first entry [0] is the directory itself
+        std::cerr << "Write permission denied for destination directory.\n";
+        current_directory_block = backupCurrentDirectoryBlock;
+        return -1;
+    }
 
     int destIndex = find_free_directory_entry(dest_dir_entries);
     if (destIndex == -1 && destPathParts.size() != 0) {  // If we're moving (not just renaming in the same directory)
@@ -538,6 +630,14 @@ int FS::rm(std::string filepath) {
     uint8_t dir_data[BLOCK_SIZE];
     disk.read(currentBlock, dir_data);
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(dir_data);
+
+    // Check write permission on the directory containing the file/directory to be removed
+    if (!(dir_entries[0].access_rights & WRITE)) {  // Assuming the first entry [0] is the directory itself
+        std::cerr << "Write permission denied for directory: " << pathParts[pathParts.size() - 2] << "\n";
+        current_directory_block = backupCurrentDirectoryBlock;
+        return -1;
+    }
+
     std::string targetName = pathParts.back(); // The last part is the name of the file/directory to be removed
     int entryIndex = find_directory_entry(targetName, dir_entries);
     if (entryIndex == -1) {
@@ -592,112 +692,150 @@ int FS::rm(std::string filepath) {
 
 // append <filepath1> <filepath2> appends the contents of file <filepath1> to
 // the end of file <filepath2>. The file <filepath1> is unchanged.
-int FS::append(std::string filename1, std::string filename2) {
-    std::cout << "Executing FS::append()...\n";
+int FS::append(std::string filepath1, std::string filepath2) {
+    std::cout << "FS::append(" << filepath1 << ", " << filepath2 << ")\n";
 
-    uint8_t root_dir_data[BLOCK_SIZE];
-    disk.read(ROOT_BLOCK, root_dir_data);
-    struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(root_dir_data);
+    // Resolve paths to their components
+    std::vector<std::string> pathParts1 = resolve_path(filepath1);
+    std::vector<std::string> pathParts2 = resolve_path(filepath2);
 
-    int srcIndex = -1, destIndex = -1;
-    for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i) {
-        if (strcmp(dir_entries[i].file_name, filename1.c_str()) == 0) {
-            srcIndex = i;
-        }
-        if (strcmp(dir_entries[i].file_name, filename2.c_str()) == 0) {
-            destIndex = i;
-        }
-    }
-
-    if (srcIndex == -1 || destIndex == -1) {
-        std::cerr << "Error: One or both files not found.\n";
+    if (pathParts1.empty() || pathParts2.empty()) {
+        std::cerr << "Invalid path.\n";
         return -1;
     }
 
-    std::cout << "Found " << filename1 << " with size: " << dir_entries[srcIndex].size << " bytes.\n";
-    std::cout << "Found " << filename2 << " with size: " << dir_entries[destIndex].size << " bytes.\n";
+    // Find the directory entry of the source file
+    unsigned int currentBlock1 = current_directory_block;
+    struct dir_entry* dirEntry1 = nullptr;
+    for (size_t i = 0; i < pathParts1.size() - 1; ++i) {
+        dirEntry1 = find_directory_entry(pathParts1[i]);
+        if (dirEntry1 == nullptr || dirEntry1->type != TYPE_DIR) {
+            std::cerr << "Directory not found in source path: " << pathParts1[i] << "\n";
+            return -1;
+        }
+        currentBlock1 = dirEntry1->first_blk;
+    }
+
+    // Find the directory entry of the destination file
+    unsigned int currentBlock2 = current_directory_block;
+    struct dir_entry* dirEntry2 = nullptr;
+    for (size_t i = 0; i < pathParts2.size() - 1; ++i) {
+        dirEntry2 = find_directory_entry(pathParts2[i]);
+        if (dirEntry2 == nullptr || dirEntry2->type != TYPE_DIR) {
+            std::cerr << "Directory not found in destination path: " << pathParts2[i] << "\n";
+            return -1;
+        }
+        currentBlock2 = dirEntry2->first_blk;
+    }
+
+    // Now, currentBlock1 is where the source file should be
+    uint8_t dir_data1[BLOCK_SIZE];
+    disk.read(currentBlock1, dir_data1);
+    struct dir_entry *dir_entries1 = reinterpret_cast<struct dir_entry*>(dir_data1);
+    int fileIndex1 = find_directory_entry(pathParts1.back(), dir_entries1);
+    if (fileIndex1 == -1) {
+        std::cerr << "Source file not found: " << pathParts1.back() << "\n";
+        return -1;
+    }
+
+    dirEntry1 = &dir_entries1[fileIndex1]; // Get the directory entry of the source file
+
+    // Check read permission on the source file
+    if (!(dirEntry1->access_rights & READ)) {
+        std::cerr << "Read permission denied for source file: " << pathParts1.back() << "\n";
+        return -1;
+    }
+
+    // Now, currentBlock2 is where the destination file should be
+    uint8_t dir_data2[BLOCK_SIZE];
+    disk.read(currentBlock2, dir_data2);
+    struct dir_entry *dir_entries2 = reinterpret_cast<struct dir_entry*>(dir_data2);
+    int fileIndex2 = find_directory_entry(pathParts2.back(), dir_entries2);
+    if (fileIndex2 == -1) {
+        std::cerr << "Destination file not found: " << pathParts2.back() << "\n";
+        return -1;
+    }
+
+    dirEntry2 = &dir_entries2[fileIndex2]; // Get the directory entry of the destination file
+
+    // Check write permission on the destination file
+    if (!(dirEntry2->access_rights & (READ | WRITE))) {
+        std::cerr << "Read and write permission denied for destination file: " << pathParts2.back() << "\n";
+        return -1;
+    }
 
     // Read the FAT
     disk.read(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
-    int16_t currentBlockDest = dir_entries[destIndex].first_blk;
+    int16_t currentBlockDest = dirEntry2->first_blk;
     while (fat[currentBlockDest] != FAT_EOF) {
         currentBlockDest = fat[currentBlockDest];
     }
-
+    // Find the last block of the destination file and the position to start writing in it
     uint8_t lastBlockData[BLOCK_SIZE];
     disk.read(currentBlockDest, lastBlockData);
+    int positionInLastBlock = dirEntry2->size % BLOCK_SIZE;
 
-    int positionInLastBlock = dir_entries[destIndex].size % BLOCK_SIZE;
-
-    // Add a newline to the destination file
-    if (positionInLastBlock < BLOCK_SIZE - 1) {
-        lastBlockData[positionInLastBlock] = '\n';
-        disk.write(currentBlockDest, lastBlockData);
-    } else {
-        int16_t newBlockForNewline = -1;
-        for (int i = 1; i < (BLOCK_SIZE / 2); ++i) {
-            if (fat[i] == FAT_FREE) {
-                newBlockForNewline = i;
-                break;
-            }
-        }
-        if (newBlockForNewline == -1) {
-            std::cerr << "Error: No free blocks left on disk for newline.\n";
-            return -1;
-        }
-        fat[currentBlockDest] = newBlockForNewline;
-        fat[newBlockForNewline] = FAT_EOF;
-        memset(lastBlockData, 0, BLOCK_SIZE);
-        lastBlockData[0] = '\n';
-        disk.write(newBlockForNewline, lastBlockData);
-        currentBlockDest = newBlockForNewline;
-        dir_entries[destIndex].size += 1;
-    }
-
-    // Append the content of source to destination
-    int16_t currentBlockSrc = dir_entries[srcIndex].first_blk;
+    // Read the content of the source file
+    int16_t currentBlockSrc = dirEntry1->first_blk;
+    uint8_t block_data[BLOCK_SIZE];
+    int bytesRead = 0;
     while (currentBlockSrc != FAT_EOF) {
-        uint8_t block_data[BLOCK_SIZE];
         disk.read(currentBlockSrc, block_data);
 
-        int16_t freeBlockDest = -1;
-        for (int i = 1; i < (BLOCK_SIZE / 2); ++i) {
-            if (fat[i] == FAT_FREE) {
-                freeBlockDest = i;
+        for (int i = 0; i < BLOCK_SIZE; ++i) {
+            // Check if we need a new block for the destination file
+            if (positionInLastBlock == BLOCK_SIZE) {
+                // Find a free block
+                int16_t freeBlockDest = find_free_fat_entry();
+                if (freeBlockDest == -1) {
+                    std::cerr << "No free blocks left on disk.\n";
+                    return -1;
+                }
+
+                // Update FAT for the destination file
+                fat[currentBlockDest] = freeBlockDest;
+                fat[freeBlockDest] = FAT_EOF;
+
+                // Write the current last block to disk
+                disk.write(currentBlockDest, lastBlockData);
+
+                // Reset lastBlockData and positionInLastBlock
+                memset(lastBlockData, 0, BLOCK_SIZE);
+                positionInLastBlock = 0;
+                currentBlockDest = freeBlockDest;
+            }
+
+            // Write byte from source file to destination file
+            lastBlockData[positionInLastBlock] = block_data[i];
+            positionInLastBlock++;
+            dirEntry2->size++;
+
+            // Break if we have read all bytes of the source file
+            if (++bytesRead == dirEntry1->size) {
                 break;
             }
         }
 
-        if (freeBlockDest == -1) {
-            std::cerr << "Error: No free blocks left on disk.\n";
-            return -1;
-        }
-
-        // Link current destination block to the new free block
-        fat[currentBlockDest] = freeBlockDest;
-        fat[freeBlockDest] = FAT_EOF;
-
-        std::cout << "Linking block " << currentBlockSrc << " from " << filename1 
-                  << " to free block " << freeBlockDest << " for " << filename2 << ".\n";
-
-        disk.write(freeBlockDest, block_data);
-
+        // Go to the next block of the source file
         currentBlockSrc = fat[currentBlockSrc];
-        currentBlockDest = freeBlockDest;
     }
 
-    dir_entries[destIndex].size += dir_entries[srcIndex].size;
-    disk.write(ROOT_BLOCK, root_dir_data);
+    // Write the last block of the destination file to disk
+    disk.write(currentBlockDest, lastBlockData);
+
+    // Update the size of the destination file in its directory entry
+    dir_entries2[fileIndex2].size = dirEntry2->size;
+
+    // Write back the updated directory entries and FAT to the disk
+    disk.write(currentBlock2, dir_data2);  // Write to the destination directory
     disk.write(FAT_BLOCK, reinterpret_cast<uint8_t*>(fat));
 
-    std::cout << "Completed appending " << filename1 << " to " << filename2 << ".\n";
+    std::cout << "Completed appending " << filepath1 << " to " << filepath2 << ".\n";
 
     return 0;
 }
 
-
-/* THIS SECTION IS CURRENTLY WIP */
 
 
 // mkdir <dirpath> creates a new sub-directory with the name <dirpath>
@@ -744,6 +882,12 @@ int FS::mkdir(std::string dirpath) {
             std::cerr << "Directory already exists.\n";
             return -1;
         }
+    }
+
+    // Check write permission on the parent directory
+    if (!(parent_dir_entries[0].access_rights & WRITE)) {  // Assuming the first entry [0] is the directory itself
+        std::cerr << "Write permission denied for directory: " << parts[parts.size() - 1] << "\n";
+        return -1;
     }
 
     // Find a free block for the new directory
@@ -793,7 +937,6 @@ int FS::mkdir(std::string dirpath) {
 }
 
 
-/* THIS SECTION IS CURRENTLY WIP */
 
 
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>
@@ -916,11 +1059,64 @@ int FS::pwd() {
 
 // chmod <accessrights> <filepath> changes the access rights for the
 // file <filepath> to <accessrights>.
-int FS::chmod(std::string accessrights, std::string filepath)
-{
+int FS::chmod(std::string accessrights, std::string filepath) {
     std::cout << "FS::chmod(" << accessrights << "," << filepath << ")\n";
+
+    // 1. Convert accessrights from string to integer
+    uint8_t newAccessRights;
+    try {
+        newAccessRights = static_cast<uint8_t>(std::stoi(accessrights, nullptr, 8)); // Converting octal string to integer
+    } catch (std::invalid_argument& e) {
+        std::cerr << "Invalid access rights format.\n";
+        return -1;
+    }
+
+    // 2. Resolve the filepath
+    std::vector<std::string> pathParts = resolve_path(filepath);
+    if (pathParts.empty()) {
+        std::cerr << "Invalid path." << std::endl;
+        return -1;
+    }
+
+    // Backup the current directory block for restoration later
+    unsigned int backupCurrentDirectoryBlock = current_directory_block;
+
+    // Find the directory of the file/directory to change permissions
+    unsigned int currentBlock = current_directory_block;
+    struct dir_entry *dirEntry = nullptr;
+    for (size_t i = 0; i < pathParts.size() - 1; ++i) {
+        current_directory_block = currentBlock;  // Update current directory
+        dirEntry = find_directory_entry(pathParts[i]);
+        if (dirEntry == nullptr || dirEntry->type != TYPE_DIR) {
+            std::cerr << "Directory not found: " << pathParts[i] << "\n";
+            current_directory_block = backupCurrentDirectoryBlock;
+            return -1;
+        }
+        currentBlock = dirEntry->first_blk;  // Move to the next directory in the path
+    }
+
+    // Now, currentBlock is where the file/directory to change permissions should be
+    uint8_t dir_data[BLOCK_SIZE];
+    disk.read(currentBlock, dir_data);
+    struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry*>(dir_data);
+    std::string targetName = pathParts.back(); // The last part is the name of the file/directory to change permissions
+    int entryIndex = find_directory_entry(targetName, dir_entries);
+    if (entryIndex == -1) {
+        std::cerr << "Entry not found.\n";
+        current_directory_block = backupCurrentDirectoryBlock;
+        return -1;
+    }
+
+    // 3. Change the access rights
+    dir_entries[entryIndex].access_rights = newAccessRights;
+
+    // 4. Write back the modified directory entry to the disk
+    disk.write(currentBlock, dir_data);
+
+    current_directory_block = backupCurrentDirectoryBlock;  // Restore original current directory
     return 0;
 }
+
 
 struct dir_entry* FS::find_directory_entry(std::string name) {
     uint8_t current_dir_data[BLOCK_SIZE];
@@ -981,4 +1177,18 @@ std::vector<std::string> FS::resolve_path(std::string path) {
     return parts;
 }
 
+std::vector<std::string> FS::resolve_path_for_cp_and_mv(std::string path) {
+    std::vector<std::string> parts;
+    std::stringstream path_stream(path);
+    std::string part;
 
+    while (std::getline(path_stream, part, '/')) {
+        if (part == "" || part == ".") continue; // Skip 'current directory' parts
+        if (part == "..") {
+            if (!parts.empty()) parts.pop_back(); // Move up one directory
+            continue;
+        }
+        parts.push_back(part);
+    }
+    return parts;
+}
