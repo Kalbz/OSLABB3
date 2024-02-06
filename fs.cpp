@@ -290,16 +290,18 @@ int FS::ls()
         struct dir_entry *entry = &current_dir_entries[i];
         if (entry->file_name[0] != '\0')
         { // valid entry
-            std::cout << entry->file_name << " ";
+            std::cout << entry->file_name << "\t";
+            // TYPE
             if (entry->type == TYPE_DIR)
             {
-                std::cout << "dir ";
+                std::cout << "dir\t";
             }
             else
             {
-                std::cout << "file ";
+                std::cout << "file\t";
             }
 
+            // ACCESS RIGHTS
             if (entry->access_rights & 0x04)
             {
                 std::cout << "r";
@@ -320,13 +322,14 @@ int FS::ls()
 
             if (entry->access_rights & 0x01)
             {
-                std::cout << "x ";
+                std::cout << "x\t";
             }
             else
             {
-                std::cout << "- ";
+                std::cout << "-\t";
             }
 
+            // SIZE
             if (entry->size == 0 || entry->type == TYPE_DIR)
             {
                 std::cout << "-\n";
