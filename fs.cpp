@@ -132,7 +132,7 @@ int FS::create(std::string filepath)
     new_entry.first_blk = free_block;
     new_entry.size = 0; // will be updated as we write content
     new_entry.type = TYPE_FILE;
-    new_entry.access_rights = READ | WRITE; // default rights
+    new_entry.access_rights = READ | WRITE | EXECUTE; // default rights
 
     // 4. Write content to file until an empty row is detected
     std::string input_line;
