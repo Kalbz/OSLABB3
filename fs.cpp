@@ -95,7 +95,7 @@ int FS::create(std::string filepath)
 
     // Check if the directory has write permission
     if (!(dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    {
         std::cerr << "Write permission denied for directory: " << pathParts[pathParts.size() - 2] << "\n";
         return -1;
     }
@@ -612,7 +612,7 @@ int FS::mv(std::string sourcepath, std::string destpath)
 
     // Check write permission on the source directory (for delete)
     if (!(source_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    {
         std::cerr << "Write permission denied for source directory.\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -662,7 +662,7 @@ int FS::mv(std::string sourcepath, std::string destpath)
 
     // Check write permission on the destination directory (for add)
     if (!(dest_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    {
         std::cerr << "Write permission denied for destination directory.\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -739,7 +739,7 @@ int FS::rm(std::string filepath)
 
     // Check write permission on the directory containing the file/directory to be removed
     if (!(dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    {
         std::cerr << "Write permission denied for directory: " << pathParts[pathParts.size() - 2] << "\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -1018,7 +1018,7 @@ int FS::mkdir(std::string dirpath)
 
     // Check write permission on the parent directory
     if (!(parent_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    {
         std::cerr << "Write permission denied for directory: " << parts[parts.size() - 1] << "\n";
         return -1;
     }
@@ -1172,8 +1172,8 @@ std::string FS::recursive_pwd(unsigned block_no)
     disk.read(block_no, dir_data);
     struct dir_entry *entries = reinterpret_cast<struct dir_entry *>(dir_data);
 
-    // Assuming ".." is always the first entry which points to the parent directory
-    unsigned parent_block = entries[0].first_blk;
+    // ".." is  the second entry which points to the parent directory (the first is ".")
+    unsigned parent_block = entries[1].first_blk;
 
     std::string current_directory_name = get_directory_name(block_no);
     if (current_directory_name.empty())
