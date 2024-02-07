@@ -1145,7 +1145,7 @@ std::string FS::get_directory_name(unsigned block_no)
     disk.read(block_no, dir_data);
     struct dir_entry *entries = reinterpret_cast<struct dir_entry *>(dir_data);
 
-    unsigned parent_block = entries[0].first_blk; // ".." points to the parent directory
+    unsigned parent_block = entries[1].first_blk; // ".." points to the parent directory
 
     uint8_t parent_dir_data[BLOCK_SIZE];
     disk.read(parent_block, parent_dir_data);
@@ -1154,7 +1154,8 @@ std::string FS::get_directory_name(unsigned block_no)
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         if (parent_entries[i].first_blk == block_no)
-        {
+        {   
+            // std::cout << "get_directory_name() returning: " <<std::string(parent_entries[i].file_name) << std::endl; // DEBUGGING only
             return std::string(parent_entries[i].file_name);
         }
     }
