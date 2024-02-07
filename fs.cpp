@@ -288,8 +288,9 @@ int FS::ls()
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         struct dir_entry *entry = &current_dir_entries[i];
+        // check if the entry is valid
         if (entry->file_name[0] != '\0')
-        { // valid entry
+        {
             std::cout << entry->file_name << "\t";
             // TYPE
             if (entry->type == TYPE_DIR)
@@ -302,7 +303,7 @@ int FS::ls()
             }
 
             // ACCESS RIGHTS
-            if (entry->access_rights & 0x04)
+            if (entry->access_rights & READ)
             {
                 std::cout << "r";
             }
@@ -311,7 +312,7 @@ int FS::ls()
                 std::cout << "-";
             }
 
-            if (entry->access_rights & 0x02)
+            if (entry->access_rights & WRITE)
             {
                 std::cout << "w";
             }
@@ -320,7 +321,7 @@ int FS::ls()
                 std::cout << "-";
             }
 
-            if (entry->access_rights & 0x01)
+            if (entry->access_rights & EXECUTE)
             {
                 std::cout << "x\t";
             }
