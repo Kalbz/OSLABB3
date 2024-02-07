@@ -94,8 +94,10 @@ int FS::create(std::string filepath)
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry *>(dir_data);
 
     // Check if the directory has write permission
+    std::cout << (int) dir_entries[0].access_rights << "   <<--------------------------";
+
     if (!(dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    {
         std::cerr << "Write permission denied for directory: " << pathParts[pathParts.size() - 2] << "\n";
         return -1;
     }
@@ -1033,15 +1035,22 @@ int FS::mkdir(std::string dirpath)
         return -1;
     }
 
-    // Write the ".." entry in the new directory block
+    // Write the ".." and "." entries in the new directory block
     struct dir_entry new_dir[BLOCK_SIZE / sizeof(struct dir_entry)];
-    strcpy(new_dir[0].file_name, "..");
-    new_dir[0].size = 0;                 // size is 0 for ".."
-    new_dir[0].first_blk = parent_block; // ".." should point back to the parent directory
+    
+    strcpy(new_dir[0].file_name, ".");
+    new_dir[0].size = 0;                 // size is 0 for "."
+    new_dir[0].first_blk = freeBlock;
     new_dir[0].type = TYPE_DIR;
-    new_dir[0].access_rights = READ | WRITE;
+    new_dir[0].access_rights = READ | WRITE | EXECUTE;
 
-    for (int i = 1; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
+    strcpy(new_dir[1].file_name, "..");
+    new_dir[1].size = 0;                 // size is 0 for ".."
+    new_dir[1].first_blk = parent_block; // ".." should point back to the parent directory
+    new_dir[1].type = TYPE_DIR;
+    new_dir[1].access_rights = READ | WRITE | EXECUTE;
+
+    for (int i = 2; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         new_dir[i].file_name[0] = '\0'; // Setting the first character to null indicates unused
         new_dir[i].size = 0;
@@ -1262,6 +1271,19 @@ int FS::chmod(std::string accessrights, std::string filepath)
 
     // 3. Change the access rights
     dir_entries[entryIndex].access_rights = newAccessRights;
+
+    if (dir_entries[entryIndex].type == TYPE_DIR) {
+        // Read the directory's own block
+        uint8_t inner_dir_data[BLOCK_SIZE];
+        disk.read(dir_entries[entryIndex].first_blk, inner_dir_data);
+        struct dir_entry* inner_dir_entries = reinterpret_cast<struct dir_entry*>(inner_dir_data);
+
+        // Update the "." entry with newAccessRights
+        inner_dir_entries[0].access_rights = newAccessRights;
+
+        // Write back the modified directory's own block to the disk
+        disk.write(dir_entries[entryIndex].first_blk, inner_dir_data);
+    }
 
     // 4. Write back the modified directory entry to the disk
     disk.write(currentBlock, dir_data);
