@@ -292,7 +292,7 @@ int FS::ls()
         if (entry->file_name[0] != '\0')
         {   
             // Name
-            std::cout << entry->file_name << " ";
+            std::cout << entry->file_name << "\t";
             
             // Type
             if (entry->type == TYPE_DIR)
