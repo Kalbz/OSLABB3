@@ -1047,7 +1047,7 @@ int FS::mkdir(std::string dirpath)
     new_dir[1].type = TYPE_DIR;
     new_dir[1].access_rights = READ | WRITE | EXECUTE;
 
-    for (int i = 1; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
+    for (int i = 2; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         new_dir[i].file_name[0] = '\0'; // Setting the first character to null indicates unused
         new_dir[i].size = 0;
