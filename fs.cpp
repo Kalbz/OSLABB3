@@ -94,7 +94,7 @@ int FS::create(std::string filepath)
     struct dir_entry *dir_entries = reinterpret_cast<struct dir_entry *>(dir_data);
 
     // Check if the directory has write permission
-    std::cout << (int) dir_entries[0].access_rights << "   <<--------------------------";
+    std::cout << (int) dir_entries[0].access_rights << "   <<--------------------------" << std::endl;
 
     if (!(dir_entries[0].access_rights & WRITE))
     {
@@ -348,7 +348,6 @@ int FS::ls()
 
 // cp <sourcepath> <destpath> makes an exact copy of the file
 // <sourcepath> to a new file <destpath>
-
 int FS::cp(std::string sourcepath, std::string destpath)
 {
     std::cout << "FS::cp()\n";
@@ -432,7 +431,7 @@ int FS::cp(std::string sourcepath, std::string destpath)
 
         currentBlock = fat[currentBlock];
     }
-    // Output the source file content (optional, for debugging)
+    // Output the source file content (for debugging)
     std::cout << "Source file content: ";
     for (int i = 0; i < sourceSize; i++)
     {
@@ -1039,8 +1038,8 @@ int FS::mkdir(std::string dirpath)
     struct dir_entry new_dir[BLOCK_SIZE / sizeof(struct dir_entry)];
     
     strcpy(new_dir[0].file_name, ".");
-    new_dir[0].size = 0;                 // size is 0 for "."
-    new_dir[0].first_blk = freeBlock;
+    new_dir[0].size = 0;                // size is 0 for "."
+    new_dir[0].first_blk = freeBlock;   // "." is pointing to itself
     new_dir[0].type = TYPE_DIR;
     new_dir[0].access_rights = READ | WRITE | EXECUTE;
 
@@ -1065,10 +1064,10 @@ int FS::mkdir(std::string dirpath)
         if (parent_dir_entries[i].file_name[0] == '\0')
         {
             strcpy(parent_dir_entries[i].file_name, dirname.c_str());
-            parent_dir_entries[i].size = sizeof(struct dir_entry); // size of one dir_entry (for "..")
+            parent_dir_entries[i].size = 0;
             parent_dir_entries[i].first_blk = freeBlock;
             parent_dir_entries[i].type = TYPE_DIR;
-            parent_dir_entries[i].access_rights = READ | WRITE;
+            parent_dir_entries[i].access_rights = READ | WRITE | EXECUTE;
             break;
         }
     }
