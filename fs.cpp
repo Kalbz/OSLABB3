@@ -6,7 +6,7 @@
 
 FS::FS()
 {
-    std::cout << "FS::FS()... Creating file system\n";
+    std::cout << "Creating file system...\n";
 }
 
 FS::~FS()
@@ -16,8 +16,6 @@ FS::~FS()
 // formats the disk, i.e., creates an empty file system
 int FS::format()
 {
-    std::cout << "FS::format()\n";
-
     // Initialize the FAT
     fat[0] = ROOT_BLOCK; // root directory
     fat[1] = FAT_BLOCK;  // FAT
@@ -30,7 +28,7 @@ int FS::format()
     if (disk.write(FAT_BLOCK, reinterpret_cast<uint8_t *>(fat)) != 0)
     {
         std::cerr << "Error writing FAT to disk.\n";
-        return -1; // or other appropriate error code
+        return -1;
     }
 
     // Initialize root directory with "." and ".." entries
@@ -55,7 +53,6 @@ int FS::format()
     }
 
     // Additional logic to reset or prepare the disk file, if needed
-    // ...
 
     return 0;
 }
@@ -64,8 +61,6 @@ int FS::format()
 // written on the following rows (ended with an empty row)
 int FS::create(std::string filepath)
 {
-    std::cout << "FS::create(" << filepath << ")\n";
-
     // 1. Resolve the path
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -207,8 +202,6 @@ int FS::create(std::string filepath)
 
 int FS::cat(std::string filepath)
 {
-    std::cout << "FS::cat(" << filepath << ")\n";
-
     // 1. Resolve the path
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -277,8 +270,6 @@ int FS::cat(std::string filepath)
 // ls lists the content in the current directory (files and sub-directories)
 int FS::ls()
 {
-    std::cout << "FS::ls()\n";
-
     // 1. Read the current directory from disk
     uint8_t current_dir_data[BLOCK_SIZE];
     disk.read(current_directory_block, current_dir_data); // Changed from ROOT_BLOCK
@@ -288,12 +279,12 @@ int FS::ls()
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         struct dir_entry *entry = &current_dir_entries[i];
-            // check if entry is valid
+        // check if entry is valid
         if (entry->file_name[0] != '\0')
-        {   
+        {
             // Name
             std::cout << entry->file_name << "\t";
-            
+
             // Type
             if (entry->type == TYPE_DIR)
             {
@@ -351,21 +342,20 @@ int FS::ls()
 
 int FS::cp(std::string sourcepath, std::string destpath)
 {
-    std::cout << "FS::cp()\n";
-
     // Resolve paths to their components
     std::vector<std::string> sourcePathParts = resolve_path(sourcepath);
     std::vector<std::string> destPathParts = resolve_path(destpath);
 
-    std::cout << "Resolved source path parts: ";
-    for (const auto &part : sourcePathParts)
-        std::cout << part << " ";
-    std::cout << std::endl;
+    // Debug prints
+    // std::cout << "Resolved source path parts: ";
+    // for (const auto &part : sourcePathParts)
+    //     std::cout << part << " ";
+    // std::cout << std::endl;
 
-    std::cout << "Resolved destination path parts: ";
-    for (const auto &part : destPathParts)
-        std::cout << part << " ";
-    std::cout << std::endl;
+    // std::cout << "Resolved destination path parts: ";
+    // for (const auto &part : destPathParts)
+    //     std::cout << part << " ";
+    // std::cout << std::endl;
 
     // Backup the current directory block for restoration later
     unsigned int backupCurrentDirectoryBlock = current_directory_block;
@@ -391,12 +381,12 @@ int FS::cp(std::string sourcepath, std::string destpath)
         currentBlock = sourceDirEntry->first_blk;
     }
 
-    // Handle the last part of the path which should be the file
+    // Handle the last part of the path which should be the file's name
     current_directory_block = currentBlock; // Update current directory
     sourceDirEntry = find_directory_entry(sourcePathParts.back());
     if (sourceDirEntry == nullptr || sourceDirEntry->type != TYPE_FILE)
     {
-        std::cerr << "Source file not found or is a directory.\n";
+        std::cerr << "Source file not found or is a directory.\n current_directory_block: " << current_directory_block << "\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
     }
@@ -577,7 +567,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
 
 int FS::mv(std::string sourcepath, std::string destpath)
 {
-    std::cout << "FS::mv()\n";
 
     // 1. Resolve paths to their components
     std::vector<std::string> sourcePathParts = resolve_path(sourcepath);
@@ -703,7 +692,6 @@ int FS::mv(std::string sourcepath, std::string destpath)
 // rm <filepath> removes / deletes the file <filepath>
 int FS::rm(std::string filepath)
 {
-    std::cout << "FS::rm()\n";
 
     // 1. Resolve paths to their components
     std::vector<std::string> pathParts = resolve_path(filepath);
@@ -805,8 +793,6 @@ int FS::rm(std::string filepath)
 // the end of file <filepath2>. The file <filepath1> is unchanged.
 int FS::append(std::string filepath1, std::string filepath2)
 {
-    std::cout << "FS::append(" << filepath1 << ", " << filepath2 << ")\n";
-
     // Resolve paths to their components
     std::vector<std::string> pathParts1 = resolve_path(filepath1);
     std::vector<std::string> pathParts2 = resolve_path(filepath2);
@@ -879,7 +865,7 @@ int FS::append(std::string filepath1, std::string filepath2)
     dirEntry2 = &dir_entries2[fileIndex2]; // Get the directory entry of the destination file
 
     // Check write permission on the destination file
-    if (!(dirEntry2->access_rights & (READ | WRITE)))
+    if (!(dirEntry2->access_rights & READ && dirEntry2->access_rights & WRITE))
     {
         std::cerr << "Read and write permission denied for destination file: " << pathParts2.back() << "\n";
         return -1;
@@ -958,7 +944,7 @@ int FS::append(std::string filepath1, std::string filepath2)
     disk.write(currentBlock2, dir_data2); // Write to the destination directory
     disk.write(FAT_BLOCK, reinterpret_cast<uint8_t *>(fat));
 
-    std::cout << "Completed appending " << filepath1 << " to " << filepath2 << ".\n";
+    // std::cout << "Completed appending " << filepath1 << " to " << filepath2 << ".\n"; // for debugging
 
     return 0;
 }
@@ -967,7 +953,6 @@ int FS::append(std::string filepath1, std::string filepath2)
 // in the current directory
 int FS::mkdir(std::string dirpath)
 {
-    std::cout << "FS::mkdir()\n";
 
     // Resolve the path to get the parts
     std::vector<std::string> parts = resolve_path(dirpath);
@@ -1032,11 +1017,11 @@ int FS::mkdir(std::string dirpath)
         return -1;
     }
 
-    // Write the ".." entry in the new directory block
+    // Write the ".." and "." entries in the new directory block
     struct dir_entry new_dir[BLOCK_SIZE / sizeof(struct dir_entry)];
 
     strcpy(new_dir[0].file_name, ".");
-    new_dir[0].size = 0;                 // size is 0 for "."
+    new_dir[0].size = 0;              // size is 0 for "."
     new_dir[0].first_blk = freeBlock; // "." should point to itselöf
     new_dir[0].type = TYPE_DIR;
     new_dir[0].access_rights = READ | WRITE | EXECUTE;
@@ -1082,8 +1067,6 @@ int FS::mkdir(std::string dirpath)
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>
 int FS::cd(std::string dirpath)
 {
-    std::cout << "FS::cd()\n";
-
     if (dirpath == "/")
     {
         current_directory_block = ROOT_BLOCK;
@@ -1134,7 +1117,6 @@ int FS::cd(std::string dirpath)
 
     std::cout << "Changing directory to block: " << block_to_search << std::endl;
     current_directory_block = block_to_search;
-    std::cout << "Current directory block is now: " << current_directory_block << std::endl;
 
     return 0;
 }
@@ -1154,8 +1136,8 @@ std::string FS::get_directory_name(unsigned block_no)
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         if (parent_entries[i].first_blk == block_no)
-        {   
-            // std::cout << "get_directory_name() returning: " <<std::string(parent_entries[i].file_name) << std::endl; // DEBUGGING only
+        {
+            std::cout << "get_directory_name() returning: " << std::string(parent_entries[i].file_name) << std::endl; // DEBUGGING only
             return std::string(parent_entries[i].file_name);
         }
     }
@@ -1190,8 +1172,7 @@ std::string FS::recursive_pwd(unsigned block_no)
 // directory, including the currect directory name
 int FS::pwd()
 {
-    std::cout << "FS::pwd()\n";
-    std::cout << "Building path from block: " << current_directory_block << std::endl;
+    //std::cout << "Building path from block: " << current_directory_block << std::endl; // For debugging
 
     // If we're in the root directory
     if (current_directory_block == ROOT_BLOCK)
@@ -1270,11 +1251,12 @@ int FS::chmod(std::string accessrights, std::string filepath)
     // 3. Change the access rights
     dir_entries[entryIndex].access_rights = newAccessRights;
 
-    if (dir_entries[entryIndex].type == TYPE_DIR) {
+    if (dir_entries[entryIndex].type == TYPE_DIR)
+    {
         // Read the directory's own block
         uint8_t inner_dir_data[BLOCK_SIZE];
         disk.read(dir_entries[entryIndex].first_blk, inner_dir_data);
-        struct dir_entry* inner_dir_entries = reinterpret_cast<struct dir_entry*>(inner_dir_data);
+        struct dir_entry *inner_dir_entries = reinterpret_cast<struct dir_entry *>(inner_dir_data);
 
         // Update the "." entry with newAccessRights
         inner_dir_entries[0].access_rights = newAccessRights;
@@ -1292,15 +1274,17 @@ int FS::chmod(std::string accessrights, std::string filepath)
 
 struct dir_entry *FS::find_directory_entry(std::string name)
 {
-    uint8_t current_dir_data[BLOCK_SIZE];
+    static uint8_t current_dir_data[BLOCK_SIZE];
     disk.read(current_directory_block, current_dir_data);
     struct dir_entry *current_dir_entries = reinterpret_cast<struct dir_entry *>(current_dir_data);
 
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
-        std::cout << "Comparing against: " << current_dir_entries[i].file_name
-                  << ", Type: " << (int)current_dir_entries[i].type
-                  << ", First Block: " << current_dir_entries[i].first_blk << "\n"; // Debug print
+        // std::cout << "Searching for: " << name.c_str() << "\n";
+        // std::cout << "Comparing against: " << current_dir_entries[i].file_name
+        //           << ", Type: " << (int)current_dir_entries[i].type
+        //           << ", First Block: " << current_dir_entries[i].first_blk << "\n"; // Debug print
+
         if (strcmp(current_dir_entries[i].file_name, name.c_str()) == 0)
         {
             return &current_dir_entries[i];
