@@ -237,6 +237,13 @@ int FS::cat(std::string filepath)
 
     dirEntry = &dir_entries[fileIndex]; // Get the directory entry of the file
 
+    // Check if it is a file
+    if (dirEntry->type != TYPE_FILE)
+    {
+        std::cerr << "Target is not a file.\n";
+        return -1;
+    }
+
     // Check if the file has read permission
     if (!(dirEntry->access_rights & READ))
     {
