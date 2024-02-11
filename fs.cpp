@@ -100,7 +100,7 @@ int FS::create(std::string filepath)
     {
         if (std::string(dir_entries[i].file_name) == filename)
         {
-            std::cerr << "File already exists: " << filename << std::endl;
+            std::cerr << "A directory or file with the name \"" << filename << "\" already exists.\n";
             return -1;
         }
     }
@@ -744,27 +744,13 @@ int FS::rm(std::string filepath)
 
     struct dir_entry target = dir_entries[entryIndex];
 
-    // If the target is a directory, ensure it's empty
+    // If the target is a directory, throw an error
     if (target.type == TYPE_DIR)
     {
-        uint8_t dir_data[BLOCK_SIZE];
-        disk.read(target.first_blk, dir_data);
-        struct dir_entry *entries = reinterpret_cast<struct dir_entry *>(dir_data);
-        for (int i = 1; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
-        { // Start from 1 to skip ".." entry
-            if (entries[i].file_name[0] != '\0')
-            {
-                std::cerr << "Error: Directory is not empty.\n";
-                current_directory_block = backupCurrentDirectoryBlock;
-                return -1;
-            }
-        }
-
-        // If directory is empty, mark its block as free in the FAT
-        disk.read(FAT_BLOCK, reinterpret_cast<uint8_t *>(fat));
-        fat[target.first_blk] = FAT_FREE;
-        disk.write(FAT_BLOCK, reinterpret_cast<uint8_t *>(fat));
+        std::cerr << "Target is a directory.\n";
+        return -1;
     }
+
     // If it's a file, mark its blocks as free in the FAT
     else
     {
@@ -996,7 +982,7 @@ int FS::mkdir(std::string dirpath)
     {
         if (strcmp(parent_dir_entries[i].file_name, dirname.c_str()) == 0)
         {
-            std::cerr << "Directory already exists.\n";
+            std::cerr << "A directory or file with the name \"" << dirname << "\" already exists.\n";
             return -1;
         }
     }
@@ -1137,7 +1123,6 @@ std::string FS::get_directory_name(unsigned block_no)
     {
         if (parent_entries[i].first_blk == block_no)
         {
-            std::cout << "get_directory_name() returning: " << std::string(parent_entries[i].file_name) << std::endl; // DEBUGGING only
             return std::string(parent_entries[i].file_name);
         }
     }
