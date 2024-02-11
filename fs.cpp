@@ -752,10 +752,10 @@ int FS::rm(std::string filepath)
 
     struct dir_entry target = dir_entries[entryIndex];
 
-    // If the target is a directory, throw an error
-    if (target.type == TYPE_DIR)
+    // If the target is not a file, throw an error
+    if (target.type != TYPE_FILE)
     {
-        std::cerr << "Target is a directory.\n";
+        std::cerr << "Target is not a file.\n";
         return -1;
     }
 
