@@ -850,6 +850,12 @@ int FS::append(std::string filepath1, std::string filepath2)
 
     dirEntry2 = &dir_entries2[fileIndex2]; // Get the directory entry of the destination file
 
+    if (dirEntry2->type != TYPE_FILE)
+    {
+        std::cerr << "Destination is a directory.\n";
+        return -1;
+    }
+
     // Check write permission on the destination file
     if (!(dirEntry2->access_rights & READ && dirEntry2->access_rights & WRITE))
     {
