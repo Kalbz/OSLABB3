@@ -276,6 +276,7 @@ int FS::ls()
     struct dir_entry *current_dir_entries = reinterpret_cast<struct dir_entry *>(current_dir_data);
 
     // 2. Iterate over all entries and print details
+    std::cout << "Name\t\tType\t\tAccess rights\tSize\n";
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         struct dir_entry *entry = &current_dir_entries[i];
@@ -283,16 +284,16 @@ int FS::ls()
         if (entry->file_name[0] != '\0')
         {
             // Name
-            std::cout << entry->file_name << "\t";
+            std::cout << entry->file_name << "\t\t";
 
             // Type
             if (entry->type == TYPE_DIR)
             {
-                std::cout << "dir\t";
+                std::cout << "dir\t\t";
             }
             else
             {
-                std::cout << "file\t";
+                std::cout << "file\t\t";
             }
 
             // Access rights
@@ -316,11 +317,11 @@ int FS::ls()
 
             if (entry->access_rights & EXECUTE)
             {
-                std::cout << "x\t";
+                std::cout << "x\t\t";
             }
             else
             {
-                std::cout << "-\t";
+                std::cout << "-\t\t";
             }
 
             // Size
