@@ -752,11 +752,26 @@ int FS::rm(std::string filepath)
 
     struct dir_entry target = dir_entries[entryIndex];
 
-    // If the target is not a file, throw an error
-    if (target.type != TYPE_FILE)
+    // If the target is a directory, ensure it's empty
+    if (target.type == TYPE_DIR)
     {
-        std::cerr << "Target is not a file.\n";
-        return -1;
+        uint8_t dir_data[BLOCK_SIZE];
+        disk.read(target.first_blk, dir_data);
+        struct dir_entry *entries = reinterpret_cast<struct dir_entry *>(dir_data);
+        for (int i = 2; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
+        { // Start from 1 to skip ".." and "." entries
+            if (entries[i].file_name[0] != '\0')
+            {
+                std::cerr << "Error: Directory is not empty.\n";
+                current_directory_block = backupCurrentDirectoryBlock;
+                return -1;
+            }
+        }
+
+        // If directory is empty, mark its block as free in the FAT
+        disk.read(FAT_BLOCK, reinterpret_cast<uint8_t *>(fat));
+        fat[target.first_blk] = FAT_FREE;
+        disk.write(FAT_BLOCK, reinterpret_cast<uint8_t *>(fat));
     }
 
     // If it's a file, mark its blocks as free in the FAT
