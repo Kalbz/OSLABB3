@@ -465,7 +465,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
     dir_entries = reinterpret_cast<struct dir_entry *>(current_dir_data);
 
     // Determine if the destination path is a directory or a filename
-    bool destIsDirectory = false;
     int dirIndex = -1; // Index of the destination directory in its parent directory
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); i++)
     {
@@ -474,16 +473,15 @@ int FS::cp(std::string sourcepath, std::string destpath)
             if (dir_entries[i].type == TYPE_DIR)
             {
                 // Destination path is a directory, set flag
-                destIsDirectory = true;
                 dirIndex = i;
                 break;
             }
         }
     }
 
-    if (destIsDirectory)
+    if (dirIndex != -1) // If destination is a directory
     {
-        // If destination is a directory, use the source file's name as the new file's name
+        // Use the source file's name as the new file's name
         currentBlock = dir_entries[dirIndex].first_blk; // Change to the destination directory's block
         disk.read(currentBlock, current_dir_data);      // Read the destination directory
         dir_entries = reinterpret_cast<struct dir_entry *>(current_dir_data);
@@ -646,23 +644,50 @@ int FS::mv(std::string sourcepath, std::string destpath)
     disk.read(currentBlock, dest_dir_data);
     struct dir_entry *dest_dir_entries = reinterpret_cast<struct dir_entry *>(dest_dir_data);
 
-    // Check if the destination file already exists
+    // Variables to handle if the destination is a directory
+    int dirIndex = -1;
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); i++)
     {
         if (strcmp(dest_dir_entries[i].file_name, destFileName.c_str()) == 0)
         {
-            std::cerr << "Destination file already exists: " << destFileName << std::endl;
-            current_directory_block = backupCurrentDirectoryBlock;
-            return -1; // File already exists
+            if (dest_dir_entries[i].type == TYPE_DIR)
+            {
+                dirIndex = i;
+                break;
+            }
+            else
+            {
+                std::cerr << "Destination file already exists: " << destFileName << std::endl;
+                current_directory_block = backupCurrentDirectoryBlock;
+                return -1; // File already exists
+            }
         }
     }
 
-    // Check write permission on the destination directory (for add)
-    if (!(dest_dir_entries[0].access_rights & WRITE))
+    if (dirIndex != -1)
     {
-        std::cerr << "Write permission denied for destination directory.\n";
-        current_directory_block = backupCurrentDirectoryBlock;
-        return -1;
+        currentBlock = dest_dir_entries[dirIndex].first_blk; // Change to the destination directory's block
+        disk.read(currentBlock, dest_dir_data);      // Read the destination directory
+        dest_dir_entries = reinterpret_cast<struct dir_entry *>(dest_dir_data);
+        destFileName = sourcePathParts.back();
+
+        // Check write permission on destination directory
+        if (!(dest_dir_entries[dirIndex].access_rights & WRITE))
+        {
+            std::cerr << "Write permission denied for destination directory.\n";
+            current_directory_block = backupCurrentDirectoryBlock;
+            return -1;
+        }
+    }
+    else
+    {
+        // Check write permission on the destination (if the target is not a directory)
+        if (!(dest_dir_entries[0].access_rights & WRITE))
+        {
+            std::cerr << "Write permission denied for destination directory.\n";
+            current_directory_block = backupCurrentDirectoryBlock;
+            return -1;
+        }
     }
 
     int destIndex = find_free_directory_entry(dest_dir_entries);
@@ -1186,7 +1211,7 @@ std::string FS::recursive_pwd(unsigned block_no)
 // directory, including the currect directory name
 int FS::pwd()
 {
-    //std::cout << "Building path from block: " << current_directory_block << std::endl; // For debugging
+    // std::cout << "Building path from block: " << current_directory_block << std::endl; // For debugging
 
     // If we're in the root directory
     if (current_directory_block == ROOT_BLOCK)
