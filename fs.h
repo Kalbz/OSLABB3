@@ -80,6 +80,8 @@ public:
     int16_t findFreeBlock();
     std::vector<std::string> resolve_path(std::string path);
     std::vector<std::string> resolve_path_for_cp_and_mv(std::string path);
+    int mv_to_dir(std::string sourcepath, std::string destpath);
+    int mv_to_file(std::string sourcepath, std::string destpath);
 };
 
 #endif // __FS_H__
