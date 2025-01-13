@@ -65,7 +65,7 @@ int FS::format()
 int FS::create(std::string filepath)
 {
     std::cout << "FS::create(" << filepath << ")\n";
-
+    
     // 1. Resolve the path
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -109,6 +109,14 @@ int FS::create(std::string filepath)
             return -1;
         }
     }
+
+    // Check if filename is too long.
+    if (filename.size() > 55)
+    {
+        std::cerr << "Filename too long: " << filename << ". Max length is 55 characters.\n";
+        return -1;
+    }
+    
     // 1. Find a free block (correct position)
     int free_block = -1;
     for (int i = 2; i < disk.get_no_blocks(); ++i)
@@ -188,15 +196,21 @@ int FS::create(std::string filepath)
     // Set the FAT entry for the last block to EOF
     fat[free_block] = FAT_EOF;
 
-    // Update the directory (not necessarily the root) with the new entry
+    // Update the directory
+    int freeslot = -1;
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         if (dir_entries[i].file_name[0] == '\0')
         { // Check for empty slot
             dir_entries[i] = new_entry;
+            freeslot = 1;
             break;
         }
     }
+    if (freeslot == -1){
+        std::cerr << "Error: It is full, you can not create a new file." << std::endl;
+    } 
+
 
     // Write back the updated directory and FAT to the disk
     disk.write(currentBlock, dir_data); // Use currentBlock instead of current_directory_block
@@ -243,6 +257,13 @@ int FS::cat(std::string filepath)
     }
 
     dirEntry = &dir_entries[fileIndex]; // Get the directory entry of the file
+
+    // Check if the entry is a directory
+    if (dirEntry->type == TYPE_DIR)
+    {
+        std::cerr << "Cannot use cat on a directory: ";
+        return -1;
+    }
 
     // Check if the file has read permission
     if (!(dirEntry->access_rights & READ))
@@ -351,8 +372,8 @@ int FS::cp(std::string sourcepath, std::string destpath)
     std::cout << "FS::cp()\n";
 
     // Resolve paths to their components
-    std::vector<std::string> sourcePathParts = resolve_path_for_cp_and_mv(sourcepath);
-    std::vector<std::string> destPathParts = resolve_path_for_cp_and_mv(destpath);
+    std::vector<std::string> sourcePathParts = resolve_path(sourcepath);
+    std::vector<std::string> destPathParts = resolve_path(destpath);
 
     std::cout << "Resolved source path parts: ";
     for (const auto &part : sourcePathParts)
@@ -575,6 +596,7 @@ int FS::cp(std::string sourcepath, std::string destpath)
     return 0;
 }
 
+
 int FS::mv(std::string sourcepath, std::string destpath)
 {
     std::cout << "FS::mv()\n";
@@ -610,18 +632,18 @@ int FS::mv(std::string sourcepath, std::string destpath)
     disk.read(currentBlock, source_dir_data);
     struct dir_entry *source_dir_entries = reinterpret_cast<struct dir_entry *>(source_dir_data);
 
-    // Check write permission on the source directory (for delete)
-    if (!(source_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
-        std::cerr << "Write permission denied for source directory.\n";
-        current_directory_block = backupCurrentDirectoryBlock;
-        return -1;
-    }
-
+    // Check write permission on the source file (not directory)
     int sourceIndex = find_directory_entry(sourcePathParts.back(), source_dir_entries);
     if (sourceIndex == -1)
     {
         std::cerr << "Source file not found.\n";
+        current_directory_block = backupCurrentDirectoryBlock;
+        return -1;
+    }
+
+    if (!(source_dir_entries[sourceIndex].access_rights & WRITE))
+    { // Check permission on the source file
+        std::cerr << "Write permission denied for source file.\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
     }
@@ -662,7 +684,7 @@ int FS::mv(std::string sourcepath, std::string destpath)
 
     // Check write permission on the destination directory (for add)
     if (!(dest_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    { // Check permission on the destination directory
         std::cerr << "Write permission denied for destination directory.\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -681,7 +703,7 @@ int FS::mv(std::string sourcepath, std::string destpath)
         strncpy(source_dir_entries[sourceIndex].file_name, destFileName.c_str(), sizeof(source_dir_entries[sourceIndex].file_name) - 1);
         source_dir_entries[sourceIndex].file_name[sizeof(source_dir_entries[sourceIndex].file_name) - 1] = '\0'; // Ensure null-termination
         // Write back the modified directory entry to the disk
-        disk.write(backupCurrentDirectoryBlock, source_dir_data); // Write back to the source directory
+        disk.write(currentBlock, source_dir_data); // Write back to the current directory
     }
     else
     {                                                                  // Moving to a different directory
@@ -1334,29 +1356,9 @@ std::vector<std::string> FS::resolve_path(std::string path)
     while (std::getline(path_stream, part, '/'))
     {
         if (part == "" || part == ".")
+            
             continue; // Skip 'current directory' parts
         // Don't remove ".." parts here, let the cd command handle them
-        parts.push_back(part);
-    }
-    return parts;
-}
-
-std::vector<std::string> FS::resolve_path_for_cp_and_mv(std::string path)
-{
-    std::vector<std::string> parts;
-    std::stringstream path_stream(path);
-    std::string part;
-
-    while (std::getline(path_stream, part, '/'))
-    {
-        if (part == "" || part == ".")
-            continue; // Skip 'current directory' parts
-        if (part == "..")
-        {
-            if (!parts.empty())
-                parts.pop_back(); // Move up one directory
-            continue;
-        }
         parts.push_back(part);
     }
     return parts;
