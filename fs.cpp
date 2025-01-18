@@ -97,7 +97,7 @@ int FS::create(std::string filepath)
         parentDirEntry = find_directory_entry(pathParts.back()); // Find the last part
 
         if (parentDirEntry->type != TYPE_DIR) {
-            // Its a file, so stop checking and continue
+            // Its a file, stop checking and continue
             std::cout << "Final entry is a file, skipping write check: " << pathParts.back() << "\n";
         } else {
             // Its a directory, perform the write permission check
