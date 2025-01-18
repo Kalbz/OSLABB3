@@ -277,6 +277,7 @@ int FS::cat(std::string filepath)
         char *ptr = (char *)block_data;
         while (*ptr)
         {                                  // Loop until we hit a null character
+            std::cout << ptr << std::endl; // Print the string
             ptr += strlen(ptr) + 1;        // Move to the next string in the block
         }
 
@@ -429,6 +430,15 @@ int FS::cp(std::string sourcepath, std::string destpath)
     // 4. Navigate the DESTINATION path
     unsigned int destBlock = current_directory_block;
 
+    // Check if the destination path is absolute
+    if (destpath[0] == '/') {
+        // Handle absolute path: set current_directory_block to the root directory block (usually block 0)
+        current_directory_block = 0; // Assuming root directory is at block 0
+
+        // Re-initialize destBlock to the root directory for absolute path handling
+        destBlock = current_directory_block;
+    }
+
     // We keep track of all components *except possibly the last one* as directories
     // Then decide if the last piece is a directory or a filename
     std::string finalComponent;
@@ -468,7 +478,7 @@ int FS::cp(std::string sourcepath, std::string destpath)
             struct dir_entry* subdir = find_directory_entry(part);
             if (!subdir || subdir->type != TYPE_DIR) {
                 std::cerr << "Destination path invalid or not a directory: " 
-                          << part << "\n";
+                        << part << "\n";
                 delete[] sourceData;
                 current_directory_block = backupCDB;
                 return -1;
@@ -476,6 +486,7 @@ int FS::cp(std::string sourcepath, std::string destpath)
             destBlock = subdir->first_blk;
         }
     }
+
 
     // Now we handle the final component
     std::string destFileName; // we'll fill this
