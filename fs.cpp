@@ -113,7 +113,7 @@ int FS::create(std::string filepath)
     // 1. Find a free block (correct position)
     int free_block = -1;
     for (int i = 2; i < disk.get_no_blocks(); ++i)
-    { // start from 2 because 0 and 1 are reserved
+    { // Start from 2 because 0 and 1 are reserved
         if (fat[i] == FAT_FREE)
         {
             free_block = i;
