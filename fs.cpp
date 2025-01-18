@@ -67,6 +67,47 @@ int FS::create(std::string filepath)
         return -1;
     }
 
+    struct dir_entry *parentDirEntry = nullptr;
+
+    //Check so that the dir has the correct permissions
+    if (pathParts.size() == 1) {
+        parentDirEntry = find_directory_entry(".");  // Get current directory (".")
+        if (parentDirEntry == nullptr || !(parentDirEntry->access_rights & WRITE)) {
+            std::cerr << "Write permission denied for current directory: " << pathParts.back() << "\n";
+            return -1;
+        }
+    } else {
+        // Process each directory part, except the last one
+        for (size_t i = 0; i < pathParts.size() - 1; ++i) {
+            bool isAbsolutePath = (i == 0 && pathParts[i] == "/");
+
+            if (isAbsolutePath) {
+                parentDirEntry = find_directory_entry("/"); // Start from root directory
+            } else {
+                parentDirEntry = find_directory_entry(pathParts[i]);
+            }
+
+            if (parentDirEntry == nullptr || !(parentDirEntry->access_rights & WRITE)) {
+                std::cerr << "Write permission denied for directory: " << pathParts[i] << "\n";
+                return -1;
+            }
+        }
+
+        // Check the permissions for the final directory or file (current directory)
+        parentDirEntry = find_directory_entry(pathParts.back()); // Find the last part
+
+        if (parentDirEntry->type != TYPE_DIR) {
+            // Its a file, so stop checking and continue
+            std::cout << "Final entry is a file, skipping write check: " << pathParts.back() << "\n";
+        } else {
+            // Its a directory, perform the write permission check
+            if (!(parentDirEntry->access_rights & WRITE)) {
+                std::cerr << "Write permission denied for directory: " << pathParts.back() << "\n";
+                return -1;
+            }
+        }
+    }
+
     // 2. Navigate to the correct directory
     unsigned int currentBlock = current_directory_block;
     struct dir_entry *dirEntry = nullptr;
