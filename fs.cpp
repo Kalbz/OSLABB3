@@ -432,8 +432,7 @@ int FS::cp(std::string sourcepath, std::string destpath)
 
     // Check if the destination path is absolute
     if (destpath[0] == '/') {
-        // Handle absolute path: set current_directory_block to the root directory block (usually block 0)
-        current_directory_block = 0; // Assuming root directory is at block 0
+        current_directory_block = 0; //root directory is at block 0
 
         // Re-initialize destBlock to the root directory for absolute path handling
         destBlock = current_directory_block;
