@@ -6,7 +6,6 @@
 
 FS::FS()
 {
-    std::cout << "FS::FS()... Creating file system\n";
 }
 
 FS::~FS()
@@ -16,8 +15,6 @@ FS::~FS()
 // formats the disk, i.e., creates an empty file system
 int FS::format()
 {
-    std::cout << "FS::format()\n";
-
     // Initialize the FAT
     fat[0] = ROOT_BLOCK; // root directory
     fat[1] = FAT_BLOCK;  // FAT
@@ -54,9 +51,6 @@ int FS::format()
         return -1; // or other appropriate error code
     }
 
-    // Additional logic to reset or prepare the disk file, if needed
-    // ...
-
     return 0;
 }
 
@@ -64,7 +58,6 @@ int FS::format()
 // written on the following rows (ended with an empty row)
 int FS::create(std::string filepath)
 {
-    std::cout << "FS::create(" << filepath << ")\n";
     
     // 1. Resolve the path
     std::vector<std::string> pathParts = resolve_path(filepath);
@@ -95,7 +88,7 @@ int FS::create(std::string filepath)
 
     // Check if the directory has write permission
     if (!(dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    { // The first entry [0] is the directory itself
         std::cerr << "Write permission denied for directory: " << pathParts[pathParts.size() - 2] << "\n";
         return -1;
     }
@@ -221,8 +214,6 @@ int FS::create(std::string filepath)
 
 int FS::cat(std::string filepath)
 {
-    std::cout << "FS::cat(" << filepath << ")\n";
-
     // 1. Resolve the path
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -286,7 +277,6 @@ int FS::cat(std::string filepath)
         char *ptr = (char *)block_data;
         while (*ptr)
         {                                  // Loop until we hit a null character
-            std::cout << ptr << std::endl; // Print the string
             ptr += strlen(ptr) + 1;        // Move to the next string in the block
         }
 
@@ -298,8 +288,6 @@ int FS::cat(std::string filepath)
 // ls lists the content in the current directory (files and sub-directories)
 int FS::ls()
 {
-    std::cout << "FS::ls()\n";
-
     // 1. Read the current directory from disk
     uint8_t current_dir_data[BLOCK_SIZE];
     disk.read(current_directory_block, current_dir_data); // Changed from ROOT_BLOCK
@@ -365,29 +353,14 @@ int FS::ls()
 }
 int FS::cp(std::string sourcepath, std::string destpath)
 {
-    std::cout << "FS::cp()\n";
-    std::cout << "[DEBUG] cp source: '" << sourcepath 
-              << "', dest: '" << destpath << "'\n";
-
-    // -------------------------------------------------------
-    // 1) Resolve source & destination paths (keeping "..")
-    // -------------------------------------------------------
+    // 1. Resolve source & destination paths (keeping "..")
     std::vector<std::string> sourcePathParts = resolve_path_for_cp_and_mv(sourcepath);
     std::vector<std::string> destPathParts   = resolve_path_for_cp_and_mv(destpath);
 
-    std::cout << "[DEBUG] Resolved source path parts: ";
-    for (auto &p : sourcePathParts) std::cout << p << " ";
-    std::cout << "\n[DEBUG] Resolved destination path parts: ";
-    for (auto &p : destPathParts) std::cout << p << " ";
-    std::cout << std::endl;
-
     // Backup our current directory
     unsigned int backupCDB = current_directory_block;
-    std::cout << "[DEBUG] backupCDB = " << backupCDB << std::endl;
 
-    // -------------------------------------------------------
-    // 2) Locate the source FILE
-    // -------------------------------------------------------
+    // 2. Locate the source FILE
     unsigned int srcBlock = current_directory_block;
     if (!sourcePathParts.empty())
     {
@@ -395,8 +368,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
         for (int i = 0; i < (int)sourcePathParts.size() - 1; i++)
         {
             const std::string &dirName = sourcePathParts[i];
-            std::cout << "[DEBUG] (src) Looking for subdir '" << dirName 
-                      << "' from block " << srcBlock << "\n";
 
             current_directory_block = srcBlock;
             struct dir_entry* subdir = find_directory_entry(dirName);
@@ -420,8 +391,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
     }
 
     const std::string sourceFileName = sourcePathParts.back();
-    std::cout << "[DEBUG] Looking for source file '" << sourceFileName
-              << "' in block " << srcBlock << "\n";
 
     struct dir_entry *sourceFileEntry = find_directory_entry(sourceFileName);
     if (!sourceFileEntry || sourceFileEntry->type != TYPE_FILE)
@@ -436,12 +405,8 @@ int FS::cp(std::string sourcepath, std::string destpath)
 
     uint32_t sourceSize = sourceFileEntry->size;
     unsigned int sourceBlk = sourceFileEntry->first_blk;
-    std::cout << "[DEBUG] Source file block = " << sourceBlk 
-              << ", size = " << sourceSize << "\n";
 
-    // -------------------------------------------------------
-    // 3) Read source file contents into a buffer
-    // -------------------------------------------------------
+    // 3. Read source file contents into a buffer
     uint8_t* sourceData = new uint8_t[sourceSize];
     memset(sourceData, 0, sourceSize);
 
@@ -458,43 +423,28 @@ int FS::cp(std::string sourcepath, std::string destpath)
         blockToRead = fat[blockToRead];
     }
 
-    // Debug: show file content
-    std::cout << "[DEBUG] Source file content: '";
-    for (int i = 0; i < (int)sourceSize; i++)
-    {
-        std::cout << (char)sourceData[i];
-    }
-    std::cout << "'\n";
-
     // Restore current directory to what it was before finding the source
     current_directory_block = backupCDB;
 
-    // -------------------------------------------------------
-    // 4) Navigate the DESTINATION path
-    // -------------------------------------------------------
+    // 4. Navigate the DESTINATION path
     unsigned int destBlock = current_directory_block;
-    std::cout << "[DEBUG] Starting destBlock = " << destBlock << "\n";
 
-    // We'll keep track of all components *except possibly the last one* as directories
+    // We keep track of all components *except possibly the last one* as directories
     // Then decide if the last piece is a directory or a filename
     std::string finalComponent;
     if (!destPathParts.empty())
     {
         finalComponent = destPathParts.back(); // we may not treat this as a subdir
-        // We'll only pop it if we suspect it's a filename. Let's see if it's a subdir or not.
+        // We'll only pop it if we suspect it's a filename.
     }
 
     // We handle everything except the final component as directories
-    // i.e. if `destPathParts` = [ "..", "d2", "somefile" ]
-    // we’ll process [ "..", "d2" ] in the loop, then `somefile` is final.
     int lastIndex = (int)destPathParts.size() - 1;
     if (lastIndex < 0) lastIndex = 0; // safety
 
     for (int i = 0; i < lastIndex; i++)  
     {
         const std::string &part = destPathParts[i];
-        std::cout << "[DEBUG] (dest) Handling part: '" << part 
-                  << "' from block " << destBlock << "\n";
 
         // If part == "..", go up
         if (part == "..")
@@ -507,7 +457,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
             int ddIndex = find_directory_entry("..", entries);
             if (ddIndex != -1) {
                 destBlock = entries[ddIndex].first_blk; // parent
-                std::cout << "[DEBUG] Moved up => destBlock = " << destBlock << "\n";
             } else {
                 std::cerr << "Cannot move up from block " << destBlock << "\n";
             }
@@ -525,18 +474,10 @@ int FS::cp(std::string sourcepath, std::string destpath)
                 return -1;
             }
             destBlock = subdir->first_blk;
-            std::cout << "[DEBUG] Went down into '" << part 
-                      << "', destBlock = " << destBlock << "\n";
         }
     }
 
-    // Now we handle the FINAL component
-    // There are two cases:
-    //  A) The final component is ".." => we go up & reuse sourceFileName
-    //  B) The final component is a directory => we go in & reuse sourceFileName
-    //  C) The final component doesn't exist => means user typed something like just ".."
-    //  D) The final component is a potential *filename* => we use it directly
-
+    // Now we handle the final component
     std::string destFileName; // we'll fill this
 
     if (!destPathParts.empty())
@@ -552,8 +493,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
             int ddIndex = find_directory_entry("..", entries);
             if (ddIndex != -1) {
                 destBlock = entries[ddIndex].first_blk;
-                std::cout << "[DEBUG] Final component '..' => moved up => " 
-                          << destBlock << "\n";
             }
             // Reuse the sourceFileName
             destFileName = sourceFileName;
@@ -567,8 +506,7 @@ int FS::cp(std::string sourcepath, std::string destpath)
             {
                 // We put the new file inside that directory
                 destBlock = maybeDir->first_blk;
-                std::cout << "[DEBUG] Final component is an existing dir => " 
-                          << destBlock << "\n";
+
                 // Reuse sourceFileName
                 destFileName = sourceFileName;
             }
@@ -576,8 +514,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
             {
                 // We interpret it as the new filename
                 destFileName = finalComponent;
-                std::cout << "[DEBUG] Final component is a new filename => '" 
-                          << destFileName << "'\n";
             }
         }
     }
@@ -585,16 +521,9 @@ int FS::cp(std::string sourcepath, std::string destpath)
     {
         // Means user typed no final path part => reuse source
         destFileName = sourceFileName;
-        std::cout << "[DEBUG] No final component => using sourceFileName: '"
-                  << destFileName << "'\n";
     }
 
-    std::cout << "[DEBUG] Final destination directory block = " << destBlock 
-              << ", chosen filename = '" << destFileName << "'\n";
-
-    // -------------------------------------------------------
-    // 5) Ensure there's no collision & allocate new FAT chain
-    // -------------------------------------------------------
+    // 5. Ensure there's no collision & allocate new FAT chain
     // Read the directory
     uint8_t destDirData[BLOCK_SIZE];
     disk.read(destBlock, destDirData);
@@ -622,7 +551,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
         current_directory_block = backupCDB;
         return -1;
     }
-    std::cout << "[DEBUG] firstFreeBlock for copy = " << firstFreeBlock << "\n";
 
     int lastBlock = -1;
     int currentFreeBlock = firstFreeBlock;
@@ -662,9 +590,7 @@ int FS::cp(std::string sourcepath, std::string destpath)
         }
     }
 
-    // -------------------------------------------------------
-    // 6) Create a new directory entry
-    // -------------------------------------------------------
+    // 6. Create a new directory entry
     int freeDirIndex = find_free_directory_entry(destEntries);
     if (freeDirIndex == -1)
     {
@@ -695,7 +621,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
 
     delete[] sourceData;
     current_directory_block = backupCDB;
-    std::cout << "[DEBUG] cp() finished successfully.\n";
     return 0;
 }
 
@@ -736,7 +661,7 @@ int FS::mv(std::string sourcepath, std::string destpath)
 
     // Check write permission on the source directory (for delete)
     if (!(source_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    { // the first entry [0] is the directory itself
         std::cerr << "Write permission denied for source directory.\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -796,7 +721,6 @@ int FS::mv(std::string sourcepath, std::string destpath)
     // Now, decide based on destination being a directory or not
     if (destinationIsDir)
     {
-        std::cout << "Destination is a directory.\n";
         // Proceed with moving the file to the directory
         return mv_to_dir(sourcepath, destpath);
     }
@@ -818,7 +742,7 @@ int FS::mv(std::string sourcepath, std::string destpath)
 
     // Check write permission on the destination directory (for add)
     if (!(dest_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    { // the first entry [0] is the directory itself
         std::cerr << "Write permission denied for destination directory.\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -849,8 +773,6 @@ int FS::mv(std::string sourcepath, std::string destpath)
         disk.write(currentBlock, dest_dir_data);                  // Destination directory
         disk.write(backupCurrentDirectoryBlock, source_dir_data); // Source directory
     }
-
-    // Update FAT if needed (not covered here, depends on your specific implementation)
 
     current_directory_block = backupCurrentDirectoryBlock; // Restore original current directory
     return 0;
@@ -931,7 +853,7 @@ int FS::mv_to_dir(std::string sourcepath, std::string destpath)
 
     // Check write permission on the destination directory (for add)
     if (!(dest_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    { // the first entry [0] is the directory itself
         std::cerr << "Write permission denied for destination directory.\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -962,7 +884,6 @@ int FS::mv_to_dir(std::string sourcepath, std::string destpath)
 // rm <filepath> removes / deletes the file <filepath>
 int FS::rm(std::string filepath)
 {
-    std::cout << "FS::rm()\n";
 
     // 1. Resolve paths to their components
     std::vector<std::string> pathParts = resolve_path(filepath);
@@ -998,7 +919,7 @@ int FS::rm(std::string filepath)
 
     // Check write permission on the directory containing the file/directory to be removed
     if (!(dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    { // the first entry [0] is the directory itself
         std::cerr << "Write permission denied for directory: " << pathParts[pathParts.size() - 2] << "\n";
         current_directory_block = backupCurrentDirectoryBlock;
         return -1;
@@ -1064,7 +985,6 @@ int FS::rm(std::string filepath)
 // the end of file <filepath2>. The file <filepath1> is unchanged.
 int FS::append(std::string filepath1, std::string filepath2)
 {
-    std::cout << "FS::append(" << filepath1 << ", " << filepath2 << ")\n";
 
     // Resolve paths to their components
     std::vector<std::string> pathParts1 = resolve_path(filepath1);
@@ -1217,8 +1137,6 @@ int FS::append(std::string filepath1, std::string filepath2)
     disk.write(currentBlock2, dir_data2); // Write to the destination directory
     disk.write(FAT_BLOCK, reinterpret_cast<uint8_t *>(fat));
 
-    std::cout << "Completed appending " << filepath1 << " to " << filepath2 << ".\n";
-
     return 0;
 }
 
@@ -1226,7 +1144,6 @@ int FS::append(std::string filepath1, std::string filepath2)
 // in the current directory
 int FS::mkdir(std::string dirpath)
 {
-    std::cout << "FS::mkdir()\n";
 
     // Resolve the path to get the parts
     std::vector<std::string> parts = resolve_path(dirpath);
@@ -1277,7 +1194,7 @@ int FS::mkdir(std::string dirpath)
 
     // Check write permission on the parent directory
     if (!(parent_dir_entries[0].access_rights & WRITE))
-    { // Assuming the first entry [0] is the directory itself
+    { // the first entry [0] is the directory itself
         std::cerr << "Write permission denied for directory: " << parts[parts.size() - 1] << "\n";
         return -1;
     }
@@ -1334,7 +1251,6 @@ int FS::mkdir(std::string dirpath)
 // cd <dirpath> changes the current (working) directory to the directory named <dirpath>
 int FS::cd(std::string dirpath)
 {
-    std::cout << "FS::cd()\n";
 
     if (dirpath == "/")
     {
@@ -1354,7 +1270,6 @@ int FS::cd(std::string dirpath)
         if (part == "..")
         {
             // Log before navigating to parent
-            std::cout << "Attempting to navigate to parent from block: " << block_to_search << std::endl;
             int dotdot_index = find_directory_entry("..", entries);
             if (dotdot_index == -1)
             {
@@ -1362,7 +1277,6 @@ int FS::cd(std::string dirpath)
                 return -1;
             }
             block_to_search = entries[dotdot_index].first_blk;
-            std::cout << "Navigated to parent directory block: " << block_to_search << std::endl;
             continue;
         }
 
@@ -1384,9 +1298,7 @@ int FS::cd(std::string dirpath)
         }
     }
 
-    std::cout << "Changing directory to block: " << block_to_search << std::endl;
     current_directory_block = block_to_search;
-    std::cout << "Current directory block is now: " << current_directory_block << std::endl;
 
     return 0;
 }
@@ -1441,9 +1353,6 @@ std::string FS::recursive_pwd(unsigned block_no)
 // directory, including the currect directory name
 int FS::pwd()
 {
-    std::cout << "FS::pwd()\n";
-    std::cout << "Building path from block: " << current_directory_block << std::endl;
-
     // If we're in the root directory
     if (current_directory_block == ROOT_BLOCK)
     {
@@ -1464,8 +1373,6 @@ int FS::pwd()
 // file <filepath> to <accessrights>.
 int FS::chmod(std::string accessrights, std::string filepath)
 {
-    std::cout << "FS::chmod(" << accessrights << "," << filepath << ")\n";
-
     // 1. Convert accessrights from string to integer
     uint8_t newAccessRights;
     try
@@ -1536,9 +1443,6 @@ struct dir_entry *FS::find_directory_entry(std::string name)
 
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
-        std::cout << "Comparing against: " << current_dir_entries[i].file_name
-                  << ", Type: " << (int)current_dir_entries[i].type
-                  << ", First Block: " << current_dir_entries[i].first_blk << "\n"; // Debug print
         if (strcmp(current_dir_entries[i].file_name, name.c_str()) == 0)
         {
             return &current_dir_entries[i];
@@ -1557,7 +1461,7 @@ int FS::find_directory_entry(const std::string &name, dir_entry *entries)
             return i;
         }
     }
-    return -1; // Not found
+    return -1;
 }
 
 int FS::find_free_directory_entry(dir_entry *entries)
@@ -1613,12 +1517,6 @@ std::vector<std::string> FS::resolve_path_for_cp_and_mv(std::string path)
             // skip empty or '.'
             continue;
         }
-        // KEEP '..' as a real entry:
-        // if (part == "..") {
-        //     if (!parts.empty()) parts.pop_back(); 
-        // } else ...
-        // 
-        // Instead, do:
         parts.push_back(part);
     }
 
