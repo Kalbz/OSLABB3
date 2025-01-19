@@ -302,15 +302,26 @@ int FS::cat(std::string filepath)
 // ls lists the content in the current directory (files and sub-directories)
 int FS::ls()
 {
+    std::vector<std::string> dirpath = get_path_for_current_dir();
+
+    if (dirpath[0] != "/"){
+        if (!does_current_dir_have_read_access(dirpath))
+    {
+        std::cerr << "Read permission denied for part of the path.\n";
+        return -1;
+    }
+    }
+
     // 1. Read the current directory from disk
     uint8_t current_dir_data[BLOCK_SIZE];
     disk.read(current_directory_block, current_dir_data); // Changed from ROOT_BLOCK
     struct dir_entry *current_dir_entries = reinterpret_cast<struct dir_entry *>(current_dir_data);
-
+    
     // 2. Iterate over all entries and print details
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
         struct dir_entry *entry = &current_dir_entries[i];
+
         if (entry->file_name[0] != '\0')
         { // valid entry
             std::cout << entry->file_name << "\t";
@@ -1628,4 +1639,70 @@ bool FS::has_read_access_to_directories(const std::vector<std::string>& pathPart
     }
 
     return true;
+}
+
+bool FS::does_current_dir_have_read_access(const std::vector<std::string>& pathParts) {
+    unsigned int currentBlock = ROOT_BLOCK; // Always start from the root block
+    struct dir_entry* dirEntry = nullptr;
+
+    uint8_t dirData[BLOCK_SIZE]; // Buffer for reading directory blocks
+
+    // Iterate through the directories in the path
+    for (const auto& part : pathParts) {
+        if (disk.read(currentBlock, dirData) != 0) {
+            std::cerr << "Error reading directory block.\n";
+            return false;
+        }
+
+        struct dir_entry* dirEntries = reinterpret_cast<struct dir_entry*>(dirData);
+
+        // Find the directory entry for `part`
+        int entryIndex = find_directory_entry(part, dirEntries);
+        if (entryIndex == -1) {
+            std::cerr << "Directory not found: " << part << "\n";
+            return false;
+        }
+
+        dirEntry = &dirEntries[entryIndex];
+
+        // Ensure the entry is a directory
+        if (dirEntry->type != TYPE_DIR) {
+            std::cerr << "Not a directory: " << part << "\n";
+            return false;
+        }
+
+        // Check read access
+        if (!(dirEntry->access_rights & READ)) {
+            std::cerr << "Read permission denied for directory: " << part << "\n";
+            return false;
+        }
+
+        // Move to the next directory block
+        currentBlock = dirEntry->first_blk;
+    }
+
+    return true;
+}
+
+std::vector<std::string> FS::get_path_for_current_dir()
+{
+    // If in the root directory
+    if (current_directory_block == ROOT_BLOCK) {
+        return {"/"}; // Return root as a single component
+    }
+
+    // Get the path string using recursive_pwd
+    std::string path = recursive_pwd(current_directory_block);
+
+    // Parse the path into components
+    std::vector<std::string> components;
+    std::stringstream pathStream(path);
+    std::string part;
+    while (std::getline(pathStream, part, '/')) {
+        if (!part.empty()) {
+            components.push_back(part);
+        }
+    }
+
+    return components;
 }
