@@ -67,6 +67,12 @@ int FS::create(std::string filepath)
         return -1;
     }
 
+    if (!has_write_access(pathParts))
+    {
+        std::cerr << "Write permission denied for part of the path.\n";
+        return -1;
+    }
+
     // 2. Navigate to the correct directory
     unsigned int currentBlock = current_directory_block;
     struct dir_entry *dirEntry = nullptr;
@@ -634,8 +640,6 @@ int FS::cp(std::string sourcepath, std::string destpath)
     return 0;
 }
 
-
-
 int FS::mv(std::string sourcepath, std::string destpath)
 {
     // 1. Resolve paths to their components
@@ -903,6 +907,12 @@ int FS::rm(std::string filepath)
         return -1;
     }
 
+    if (!has_write_access(pathParts))
+    {
+        std::cerr << "Write permission denied for part of the path.\n";
+        return -1;
+    }
+
     // Backup the current directory block for restoration later
     unsigned int backupCurrentDirectoryBlock = current_directory_block;
 
@@ -999,6 +1009,12 @@ int FS::append(std::string filepath1, std::string filepath2)
     // Resolve paths to their components
     std::vector<std::string> pathParts1 = resolve_path(filepath1);
     std::vector<std::string> pathParts2 = resolve_path(filepath2);
+
+    if (!has_write_access(pathParts2))
+    {
+        std::cerr << "Write permission denied for part of the path.\n";
+        return -1;
+    }
 
     if (pathParts1.empty() || pathParts2.empty())
     {
@@ -1157,6 +1173,7 @@ int FS::mkdir(std::string dirpath)
 
     // Resolve the path to get the parts
     std::vector<std::string> parts = resolve_path(dirpath);
+
     unsigned parent_block = (dirpath[0] == '/') ? ROOT_BLOCK : current_directory_block;
 
     std::string dirname = parts.back(); // The last part is the directory to create
@@ -1394,7 +1411,8 @@ int FS::chmod(std::string accessrights, std::string filepath)
         std::cerr << "Invalid access rights format.\n";
         return -1;
     }
-
+    
+    
     // 2. Resolve the filepath
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -1402,7 +1420,7 @@ int FS::chmod(std::string accessrights, std::string filepath)
         std::cerr << "Invalid path." << std::endl;
         return -1;
     }
-
+    
     // Backup the current directory block for restoration later
     unsigned int backupCurrentDirectoryBlock = current_directory_block;
 
@@ -1531,4 +1549,32 @@ std::vector<std::string> FS::resolve_path_for_cp_and_mv(std::string path)
     }
 
     return parts;
+}
+
+bool FS::has_write_access_for_create_append_rm(const std::vector<std::string>& pathParts)
+{
+    unsigned int currentBlock = current_directory_block;
+    struct dir_entry* dirEntry = nullptr;
+
+    // Iterate over the parts of the path, except the last one (since it's the file)
+    for (size_t i = 0; i < pathParts.size() - 1; ++i)
+    {
+        dirEntry = find_directory_entry(pathParts[i]);
+        if (dirEntry == nullptr || dirEntry->type != TYPE_DIR)
+        {
+            std::cerr << "Directory not found: " << pathParts[i] << "\n";
+            return false;
+        }
+
+        // Check if the directory has write permission
+        if (!(dirEntry->access_rights & WRITE))
+        {
+            std::cerr << "Write permission denied for directory: " << pathParts[i] << "\n";
+            return false;
+        }
+
+        currentBlock = dirEntry->first_blk; // Move to the next directory
+    }
+
+    return true; // If we traversed the whole path with write access
 }
