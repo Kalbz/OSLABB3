@@ -82,6 +82,7 @@ public:
     std::vector<std::string> resolve_path_for_cp_and_mv(std::string path);
     int mv_to_dir(std::string sourcepath, std::string destpath);
     bool has_write_access_for_create_append_rm(const std::vector<std::string>& pathParts);
+    bool has_read_access_to_directories(const std::vector<std::string>& pathParts);
 };
 
 #endif // __FS_H__
