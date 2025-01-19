@@ -1023,6 +1023,12 @@ int FS::append(std::string filepath1, std::string filepath2)
         return -1;
     }
 
+    if (!has_read_access_to_directories(pathParts1))
+    {
+        std::cerr << "Write permission denied for part of the path.\n";
+        return -1;
+    }
+
     if (pathParts1.empty() || pathParts2.empty())
     {
         std::cerr << "Invalid path.\n";
@@ -1563,26 +1569,30 @@ bool FS::has_write_access_for_create_append_rm(const std::vector<std::string>& p
     unsigned int currentBlock = current_directory_block;
     struct dir_entry* dirEntry = nullptr;
 
+    if (pathParts.size() != 1){
+
+
+
     // Iterate over the parts of the path, except the last one (since it's the file)
-    for (size_t i = 0; i < pathParts.size() - 1; ++i)
-    {
-        dirEntry = find_directory_entry(pathParts[i]);
-        if (dirEntry == nullptr || dirEntry->type != TYPE_DIR)
+        for (size_t i = 0; i < pathParts.size() - 1; ++i)
         {
-            std::cerr << "Directory not found: " << pathParts[i] << "\n";
-            return false;
-        }
+            dirEntry = find_directory_entry(pathParts[i]);
+            if (dirEntry == nullptr || dirEntry->type != TYPE_DIR)
+            {
+                std::cerr << "Directory not found: " << pathParts[i] << "\n";
+                return false;
+            }
 
-        // Check if the directory has write permission
-        if (!(dirEntry->access_rights & WRITE))
-        {
-            std::cerr << "Write permission denied for directory: " << pathParts[i] << "\n";
-            return false;
-        }
+            // Check if the directory has write permission
+            if (!(dirEntry->access_rights & WRITE))
+            {
+                std::cerr << "Write permission denied for directory: " << pathParts[i] << "\n";
+                return false;
+            }
 
-        currentBlock = dirEntry->first_blk; // Move to the next directory
+            currentBlock = dirEntry->first_blk; // Move to the next directory
+        }
     }
-
     return true; // If we traversed the whole path with write access
 }
 
