@@ -84,7 +84,9 @@ public:
     bool has_write_access_for_create_append_rm(const std::vector<std::string>& pathParts);
     bool has_read_access_to_directories(const std::vector<std::string>& pathParts);
     std::vector<std::string> get_path_for_current_dir();
-    bool does_current_dir_have_read_access(const std::vector<std::string>& pathParts);
+    bool does_current_dir_have_read_permission(const std::vector<std::string>& pathParts);
+    bool does_current_dir_have_write_permission(const std::vector<std::string>& pathParts);
+    bool does_current_dir_have_execute_permission(const std::vector<std::string>& pathParts);
 };
 
 #endif // __FS_H__

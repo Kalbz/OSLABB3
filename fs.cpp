@@ -58,7 +58,17 @@ int FS::format()
 // written on the following rows (ended with an empty row)
 int FS::create(std::string filepath)
 {
-    
+    // 0. Check permission for the current dir
+    std::vector<std::string> dirpath = get_path_for_current_dir();
+
+    if (dirpath[0] != "/"){
+        if (!does_current_dir_have_write_permission(dirpath))
+    {
+        std::cerr << "Write permission denied for part of the path.\n";
+        return -1;
+    }
+    }
+
     // 1. Resolve the path
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -305,7 +315,7 @@ int FS::ls()
     std::vector<std::string> dirpath = get_path_for_current_dir();
 
     if (dirpath[0] != "/"){
-        if (!does_current_dir_have_read_access(dirpath))
+        if (!does_current_dir_have_read_permission(dirpath))
     {
         std::cerr << "Read permission denied for part of the path.\n";
         return -1;
@@ -917,6 +927,7 @@ int FS::mv_to_dir(std::string sourcepath, std::string destpath)
 int FS::rm(std::string filepath)
 {
 
+
     // 1. Resolve paths to their components
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -929,6 +940,16 @@ int FS::rm(std::string filepath)
     {
         std::cerr << "Write permission denied for part of the path.\n";
         return -1;
+    }
+
+    std::vector<std::string> dirpath = get_path_for_current_dir();
+    if (dirpath[0] != "/"){
+        if(pathParts.size() == 1)
+        if (!does_current_dir_have_write_permission(dirpath))
+    {
+        std::cerr << "Write permission denied for current dir.\n";
+        return -1;
+    }
     }
 
     // Backup the current directory block for restoration later
@@ -1198,6 +1219,16 @@ int FS::mkdir(std::string dirpath)
     // Resolve the path to get the parts
     std::vector<std::string> parts = resolve_path(dirpath);
 
+    std::vector<std::string> dirpath2 = get_path_for_current_dir();
+    if (dirpath2[0] != "/"){
+        if(parts.size() == 1)
+        if (!does_current_dir_have_write_permission(dirpath2))
+    {
+        std::cerr << "Write permission denied for current dir.\n";
+        return -1;
+    }
+    }
+
     unsigned parent_block = (dirpath[0] == '/') ? ROOT_BLOCK : current_directory_block;
 
     std::string dirname = parts.back(); // The last part is the directory to create
@@ -1310,6 +1341,17 @@ int FS::cd(std::string dirpath)
     }
 
     std::vector<std::string> parts = resolve_path(dirpath);
+
+    // Check permission for current dir
+    std::vector<std::string> dirpath2 = get_path_for_current_dir();
+    if (dirpath2[0] != "/"){
+        if(parts.size() == 1)
+        if (!does_current_dir_have_read_permission(dirpath2))
+    {
+        std::cerr << "Write permission denied for current dir.\n";
+        return -1;
+    }
+    }
     unsigned block_to_search = (dirpath[0] == '/') ? ROOT_BLOCK : current_directory_block;
 
     for (const std::string &part : parts)
@@ -1641,7 +1683,7 @@ bool FS::has_read_access_to_directories(const std::vector<std::string>& pathPart
     return true;
 }
 
-bool FS::does_current_dir_have_read_access(const std::vector<std::string>& pathParts) {
+bool FS::does_current_dir_have_read_permission(const std::vector<std::string>& pathParts) {
     unsigned int currentBlock = ROOT_BLOCK; // Always start from the root block
     struct dir_entry* dirEntry = nullptr;
 
@@ -1673,6 +1715,92 @@ bool FS::does_current_dir_have_read_access(const std::vector<std::string>& pathP
 
         // Check read access
         if (!(dirEntry->access_rights & READ)) {
+            std::cerr << "Read permission denied for directory: " << part << "\n";
+            return false;
+        }
+
+        // Move to the next directory block
+        currentBlock = dirEntry->first_blk;
+    }
+
+    return true;
+}
+
+bool FS::does_current_dir_have_write_permission(const std::vector<std::string>& pathParts) {
+    unsigned int currentBlock = ROOT_BLOCK; // Always start from the root block
+    struct dir_entry* dirEntry = nullptr;
+
+    uint8_t dirData[BLOCK_SIZE]; // Buffer for reading directory blocks
+
+    // Iterate through the directories in the path
+    for (const auto& part : pathParts) {
+        if (disk.read(currentBlock, dirData) != 0) {
+            std::cerr << "Error reading directory block.\n";
+            return false;
+        }
+
+        struct dir_entry* dirEntries = reinterpret_cast<struct dir_entry*>(dirData);
+
+        // Find the directory entry for `part`
+        int entryIndex = find_directory_entry(part, dirEntries);
+        if (entryIndex == -1) {
+            std::cerr << "Directory not found: " << part << "\n";
+            return false;
+        }
+
+        dirEntry = &dirEntries[entryIndex];
+
+        // Ensure the entry is a directory
+        if (dirEntry->type != TYPE_DIR) {
+            std::cerr << "Not a directory: " << part << "\n";
+            return false;
+        }
+
+        // Check read access
+        if (!(dirEntry->access_rights & WRITE)) {
+            std::cerr << "Read permission denied for directory: " << part << "\n";
+            return false;
+        }
+
+        // Move to the next directory block
+        currentBlock = dirEntry->first_blk;
+    }
+
+    return true;
+}
+
+bool FS::does_current_dir_have_execute_permission(const std::vector<std::string>& pathParts) {
+    unsigned int currentBlock = ROOT_BLOCK; // Always start from the root block
+    struct dir_entry* dirEntry = nullptr;
+
+    uint8_t dirData[BLOCK_SIZE]; // Buffer for reading directory blocks
+
+    // Iterate through the directories in the path
+    for (const auto& part : pathParts) {
+        if (disk.read(currentBlock, dirData) != 0) {
+            std::cerr << "Error reading directory block.\n";
+            return false;
+        }
+
+        struct dir_entry* dirEntries = reinterpret_cast<struct dir_entry*>(dirData);
+
+        // Find the directory entry for `part`
+        int entryIndex = find_directory_entry(part, dirEntries);
+        if (entryIndex == -1) {
+            std::cerr << "Directory not found: " << part << "\n";
+            return false;
+        }
+
+        dirEntry = &dirEntries[entryIndex];
+
+        // Ensure the entry is a directory
+        if (dirEntry->type != TYPE_DIR) {
+            std::cerr << "Not a directory: " << part << "\n";
+            return false;
+        }
+
+        // Check read access
+        if (!(dirEntry->access_rights & EXECUTE)) {
             std::cerr << "Read permission denied for directory: " << part << "\n";
             return false;
         }
