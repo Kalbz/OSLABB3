@@ -237,8 +237,7 @@ int FS::cat(std::string filepath)
         std::cerr << "Invalid path.\n";
         return -1;
     }
-
-        // Check read access for each directory in the path
+    // Check read access for each directory in the path
     if (!has_read_access_to_directories(pathParts))
     {
         std::cerr << "Read permission denied for one of the directories in the path.\n";
@@ -391,6 +390,42 @@ int FS::cp(std::string sourcepath, std::string destpath)
     // 1. Resolve source & destination paths (keeping "..")
     std::vector<std::string> sourcePathParts = resolve_path_for_cp_and_mv(sourcepath);
     std::vector<std::string> destPathParts   = resolve_path_for_cp_and_mv(destpath);
+    std::vector<std::string> sourcePathParts2 = resolve_path(sourcepath);
+    std::vector<std::string> destPathParts2   = resolve_path(destpath);
+    std::vector<std::string> dirpath2 = get_path_for_current_dir();
+
+
+    // Check permissions for current dir
+    if (dirpath2[0] != "/"){
+        if (!does_current_dir_have_read_permission(dirpath2))
+    {
+        std::cerr << "Read permission denied for part of the path.\n";
+        return -1;
+    }
+    }
+
+    if (dirpath2[0] != "/"){
+        if (!does_current_dir_have_write_permission(dirpath2))
+    {
+        std::cerr << "Read permission denied for part of the path.\n";
+        return -1;
+    }
+    }    
+
+    // Check permission for destination unless it is a single file. Then it is done later
+    if (destPathParts2.size() == 1) {
+        struct dir_entry *lastPartEntry = find_directory_entry(destPathParts2.back());
+
+        if (lastPartEntry) {
+            if (lastPartEntry->type == TYPE_DIR) {
+                // Check write access for this path
+                if (!has_write_access_for_cp_mv(destPathParts2)) {
+                    std::cerr << "Write permission denied for part of the path.\n";
+                    return -1;
+                }
+            }
+        }
+    }
 
     // Backup our current directory
     unsigned int backupCDB = current_directory_block;
@@ -673,6 +708,42 @@ int FS::mv(std::string sourcepath, std::string destpath)
     // 1. Resolve paths to their components
     std::vector<std::string> sourcePathParts = resolve_path(sourcepath);
     std::vector<std::string> destPathParts = resolve_path(destpath);
+
+    std::vector<std::string> sourcePathParts2 = resolve_path(sourcepath);
+    std::vector<std::string> destPathParts2   = resolve_path(destpath);
+    std::vector<std::string> dirpath2 = get_path_for_current_dir();
+
+    // Check permission for current dir
+    if (dirpath2[0] != "/"){
+        if (!does_current_dir_have_read_permission(dirpath2))
+    {
+        std::cerr << "Read permission denied for part of the path.\n";
+        return -1;
+    }
+    }
+
+    if (dirpath2[0] != "/"){
+        if (!does_current_dir_have_write_permission(dirpath2))
+    {
+        std::cerr << "Read permission denied for part of the path.\n";
+        return -1;
+    }
+    }    
+
+    // Check permission for destination unless it is a single file. Then it is done later
+    if (destPathParts2.size() == 1) {
+        struct dir_entry *lastPartEntry = find_directory_entry(destPathParts2.back());
+
+        if (lastPartEntry) {
+            if (lastPartEntry->type == TYPE_DIR) {
+                // Check write access for this path
+                if (!has_write_access_for_cp_mv(destPathParts2)) {
+                    std::cerr << "Write permission denied for part of the path.\n";
+                    return -1;
+                }
+            }
+        }
+    }
 
     // Backup the current directory block for restoration later
     unsigned int backupCurrentDirectoryBlock = current_directory_block;
@@ -1057,7 +1128,13 @@ int FS::append(std::string filepath1, std::string filepath2)
 
     if (!has_read_access_to_directories(pathParts1))
     {
-        std::cerr << "Write permission denied for part of the path.\n";
+        std::cerr << "Read permission denied for part of the path.\n";
+        return -1;
+    }
+
+    if (!has_read_access_to_directories(pathParts2))
+    {
+        std::cerr << "Read permission denied for part of the path.\n";
         return -1;
     }
 
@@ -1348,7 +1425,7 @@ int FS::cd(std::string dirpath)
         if(parts.size() == 1)
         if (!does_current_dir_have_read_permission(dirpath2))
     {
-        std::cerr << "Write permission denied for current dir.\n";
+        std::cerr << "Read permission denied for current dir.\n";
         return -1;
     }
     }
@@ -1649,6 +1726,56 @@ bool FS::has_write_access_for_create_append_rm(const std::vector<std::string>& p
     return true; // If we traversed the whole path with write access
 }
 
+bool FS::has_write_access_for_cp_mv(const std::vector<std::string>& pathParts)
+{
+    unsigned int currentBlock = current_directory_block;
+    struct dir_entry* dirEntry = nullptr;
+
+    if (pathParts.size() != 1){
+    // Iterate over the parts of the path, except the last one (since it's the file)
+        for (size_t i = 0; i < pathParts.size()-1; ++i)
+        {
+            dirEntry = find_directory_entry(pathParts[i]);
+            if (dirEntry == nullptr)
+            {
+                std::cerr << "Directory not found: " << pathParts[i] << "\n";
+                return false;
+            }
+
+            // Check if the directory has write permission
+            if (!(dirEntry->access_rights & WRITE))
+            {
+                std::cerr << "Write permission denied for directory: " << pathParts[i] << "\n";
+                return false;
+            }
+
+            currentBlock = dirEntry->first_blk; // Move to the next directory
+        }
+    }
+    if (pathParts.size() == 1){
+    // Iterate over the parts of the path, except the last one (since it's the file)
+        for (size_t i = 0; i < pathParts.size(); ++i)
+        {
+            dirEntry = find_directory_entry(pathParts[i]);
+            if (dirEntry == nullptr || dirEntry->type != TYPE_DIR)
+            {
+                std::cerr << "Directory not found: " << pathParts[i] << "\n";
+                return false;
+            }
+
+            // Check if the directory has write permission
+            if (!(dirEntry->access_rights & WRITE))
+            {
+                std::cerr << "Write permission denied for directory: " << pathParts[i] << "\n";
+                return false;
+            }
+
+            currentBlock = dirEntry->first_blk; // Move to the next directory
+        }
+    }
+    return true; // If we traversed the whole path with write access
+} 
+
 bool FS::has_read_access_to_directories(const std::vector<std::string>& pathParts)
 {
     unsigned int currentBlock = (pathParts[0] == "/" ? ROOT_BLOCK : current_directory_block); // Start from root if the path starts with "/"
@@ -1727,12 +1854,12 @@ bool FS::does_current_dir_have_read_permission(const std::vector<std::string>& p
 }
 
 bool FS::does_current_dir_have_write_permission(const std::vector<std::string>& pathParts) {
-    unsigned int currentBlock = ROOT_BLOCK; // Always start from the root block
+    unsigned int currentBlock = ROOT_BLOCK; //Always start from the root block
     struct dir_entry* dirEntry = nullptr;
 
     uint8_t dirData[BLOCK_SIZE]; // Buffer for reading directory blocks
 
-    // Iterate through the directories in the path
+    // Iterate through dirs in the path
     for (const auto& part : pathParts) {
         if (disk.read(currentBlock, dirData) != 0) {
             std::cerr << "Error reading directory block.\n";
@@ -1741,7 +1868,6 @@ bool FS::does_current_dir_have_write_permission(const std::vector<std::string>& 
 
         struct dir_entry* dirEntries = reinterpret_cast<struct dir_entry*>(dirData);
 
-        // Find the directory entry for `part`
         int entryIndex = find_directory_entry(part, dirEntries);
         if (entryIndex == -1) {
             std::cerr << "Directory not found: " << part << "\n";
@@ -1750,7 +1876,7 @@ bool FS::does_current_dir_have_write_permission(const std::vector<std::string>& 
 
         dirEntry = &dirEntries[entryIndex];
 
-        // Ensure the entry is a directory
+        // Check if the entry is a directory
         if (dirEntry->type != TYPE_DIR) {
             std::cerr << "Not a directory: " << part << "\n";
             return false;
@@ -1773,9 +1899,9 @@ bool FS::does_current_dir_have_execute_permission(const std::vector<std::string>
     unsigned int currentBlock = ROOT_BLOCK; // Always start from the root block
     struct dir_entry* dirEntry = nullptr;
 
-    uint8_t dirData[BLOCK_SIZE]; // Buffer for reading directory blocks
+    uint8_t dirData[BLOCK_SIZE]; // Buffer
 
-    // Iterate through the directories in the path
+    // Iterate through the dirs in the path
     for (const auto& part : pathParts) {
         if (disk.read(currentBlock, dirData) != 0) {
             std::cerr << "Error reading directory block.\n";
@@ -1784,7 +1910,6 @@ bool FS::does_current_dir_have_execute_permission(const std::vector<std::string>
 
         struct dir_entry* dirEntries = reinterpret_cast<struct dir_entry*>(dirData);
 
-        // Find the directory entry for `part`
         int entryIndex = find_directory_entry(part, dirEntries);
         if (entryIndex == -1) {
             std::cerr << "Directory not found: " << part << "\n";
@@ -1793,7 +1918,7 @@ bool FS::does_current_dir_have_execute_permission(const std::vector<std::string>
 
         dirEntry = &dirEntries[entryIndex];
 
-        // Ensure the entry is a directory
+        // Check entry is a directory
         if (dirEntry->type != TYPE_DIR) {
             std::cerr << "Not a directory: " << part << "\n";
             return false;
@@ -1816,21 +1941,21 @@ std::vector<std::string> FS::get_path_for_current_dir()
 {
     // If in the root directory
     if (current_directory_block == ROOT_BLOCK) {
-        return {"/"}; // Return root as a single component
+        return {"/"}; // Return root as a single part
     }
 
     // Get the path string using recursive_pwd
     std::string path = recursive_pwd(current_directory_block);
 
     // Parse the path into components
-    std::vector<std::string> components;
+    std::vector<std::string> parts;
     std::stringstream pathStream(path);
     std::string part;
     while (std::getline(pathStream, part, '/')) {
         if (!part.empty()) {
-            components.push_back(part);
+            parts.push_back(part);
         }
     }
 
-    return components;
+    return parts;
 }
