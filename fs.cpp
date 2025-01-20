@@ -230,6 +230,16 @@ int FS::create(std::string filepath)
 
 int FS::cat(std::string filepath)
 {
+    // 0. Check permission for the current dir
+    std::vector<std::string> dirpath = get_path_for_current_dir();
+
+    if (dirpath[0] != "/"){
+        if (!does_current_dir_have_read_permission(dirpath))
+    {
+        std::cerr << "Read permission denied for part of the path.\n";
+        return -1;
+    }
+    }
     // 1. Resolve the path
     std::vector<std::string> pathParts = resolve_path(filepath);
     if (pathParts.empty())
@@ -326,6 +336,7 @@ int FS::ls()
     disk.read(current_directory_block, current_dir_data); // Changed from ROOT_BLOCK
     struct dir_entry *current_dir_entries = reinterpret_cast<struct dir_entry *>(current_dir_data);
     
+      std::cout << "name" << "\t type \taccessrights \t" << std::endl;
     // 2. Iterate over all entries and print details
     for (int i = 0; i < (BLOCK_SIZE / sizeof(struct dir_entry)); ++i)
     {
